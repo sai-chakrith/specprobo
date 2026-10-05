@@ -7,7 +7,7 @@ from typing import Any
 from jsonschema import validate  # type: ignore[import-untyped]
 
 from ..domain.provenance import Provenance
-from ..domain.schema import Precondition
+from ..domain.schema import EcuSpec, Precondition
 from .llm import FakeLLM, LLMClient
 from .models import TableRow, TextBlock
 
@@ -39,14 +39,18 @@ def extract_fields(
 ) -> list[ProposedField]:
     client = llm or FakeLLM()
     fields: list[ProposedField] = []
-    for index, row in enumerate(rows):
+    did_index = 0
+    for row in rows:
         identifier = row.values.get("DID") or row.values.get("Identifier")
         if identifier is not None:
             fields.append(
                 ProposedField(
-                    f"dids[{index}].did", int(str(identifier), 0), _provenance(row, str(row.values))
+                    f"dids[{did_index}].did",
+                    int(str(identifier), 0),
+                    _provenance(row, str(row.values)),
                 )
             )
+            did_index += 1
         length = row.values.get("Bytes") or row.values.get("Payload octets")
         if length is not None:
             fields.append(
@@ -80,6 +84,15 @@ def extract_fields(
                 )
             )
     return fields
+
+
+def reconstruct_spec(template: EcuSpec, fields: list[ProposedField]) -> EcuSpec:
+    data = template.model_dump(mode="python")
+    for field in fields:
+        if field.path.endswith(".preconditions"):
+            continue
+        _assign_path(data, field.path, field.value)
+    return EcuSpec.model_validate(data)
 
 
 def extract_spec_fields(
@@ -231,3 +244,17 @@ def _path_values(text: str) -> list[tuple[str, str]]:
         (f"{match.group(1)}[{match.group(2)}].{match.group(3)}", match.group(4).strip())
         for match in pattern.finditer(text)
     ]
+
+
+def _assign_path(data: dict[str, Any], path: str, value: Any) -> None:
+    match = re.fullmatch(r"([A-Za-z_]+)(?:\[(\d+)\])?\.?(.*)", path)
+    if match is None:
+        return
+    root, index, tail = match.groups()
+    target: Any = data[root]
+    if index is not None:
+        target = target[int(index)]
+    if tail:
+        target[tail] = value
+    else:
+        data[root] = value
