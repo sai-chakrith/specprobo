@@ -10,6 +10,7 @@
 - Generator setup sequences, provenance traces, JSON/Markdown report models, demo, and mutation evaluation entrypoint.
 - SQLAlchemy 2 SQLite models, DB-enforced append-only hash-chained audit log, salted/hashed workspace API keys, workspace-scoped repository, explicit offline Chroma embeddings, and in-memory vector fake.
 - C2 golden vectors cover every implemented service; the baseline loader reads five hand-authored example cases from `tests/baseline_cases.json`.
+- Precondition normalization and negation finding (G2): Investigation into the 6 previously "wrong" preconditions per OEM (e.g. `('0x1000', 'signal_0', '!=', False)`) confirmed they are logically equivalent encodings rather than parser errors. The negative sentence "DID <id> must not be written while <signal> is false" specifies that writing requires `<signal>` to not be false (`!= False`), which for boolean signals is semantically equivalent to `== True`. The extraction scorer in `eval/extraction_eval.py` was updated with normalization for equivalent boolean encodings (`!= False` == `== True`, `!= True` == `== False`) and canonical unit conversions (`km/h`, `V`, `ms`, `°C`), correctly evaluating equivalent formulations without false-positive penalties.
 
 ## Stubbed or pending
 
