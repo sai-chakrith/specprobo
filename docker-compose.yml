@@ -1,0 +1,8 @@
+services:
+  specprobe:
+    build: .
+    command: python -m specprobe.demo
+    environment:
+      SPECPROBE_DATABASE_URL: sqlite:///specprobe.db
+    volumes:
+      - .:/app
