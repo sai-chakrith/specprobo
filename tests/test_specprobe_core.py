@@ -13,6 +13,7 @@ from specprobe.domain.schema import (
 )
 from specprobe.domain.testcase import TestCase as Case
 from specprobe.domain.testcase import TraceRef
+from specprobe.gen.generator import generate_suite
 from specprobe.rules.oracle import State, expected_response, step
 from specprobe.runner.executor import run_suite
 from specprobe.sim.ecu import EcuSimulator
@@ -122,6 +123,19 @@ def test_clean_generated_cases_use_transport_state() -> None:
     ]
     results = run_suite(cases, InMemoryTransport(EcuSimulator(spec)))
     assert results[0].passed
+
+
+def test_generated_case_expectations_match_oracle() -> None:
+    spec = sample_spec()
+    for case in generate_suite(spec):
+        state = State(session=spec.sessions[0].id)
+        for request in case.setup_steps:
+            _, state = step(spec, state, case.environment, request)
+        expected = None
+        for request in case.steps:
+            response, state = step(spec, state, case.environment, request)
+            expected = response.bytes
+        assert case.expected == expected, case.id
 
 
 def _mutation_case(

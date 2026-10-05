@@ -4,7 +4,6 @@ from time import perf_counter
 from specprobe.demo import build_spec, run_mutations
 from specprobe.gen.generator import generate_suite
 from specprobe.sim.auto_mutants import (
-    add_general_survivor_rules,
     auto_mutation_score,
     classify_survivors,
     run_auto_mutants,
@@ -27,14 +26,6 @@ def main() -> None:
         compilable = [item for item in auto if item.compilable]
         survivors = [item for item in compilable if not item.killed_by]
         reasons = classify_survivors(spec, survivors)
-        if name == "generated":
-            rules = add_general_survivor_rules(spec, suite, survivors)
-            if rules:
-                print(f"{name} general survivor rules added: {', '.join(rules)}")
-                auto = run_auto_mutants(spec, suite)
-                compilable = [item for item in auto if item.compilable]
-                survivors = [item for item in compilable if not item.killed_by]
-                reasons = classify_survivors(spec, survivors)
         survivor_text = ", ".join(
             f"{item.mutation_id} ({reasons[item.mutation_id]})" for item in survivors
         ) or "none"

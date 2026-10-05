@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from ..domain.schema import EcuSpec
-from ..domain.testcase import TestCase, TraceRef
+from ..domain.testcase import TestCase
 from ..runner.executor import run_suite
 from ..runner.report import MutationResult
 from .ecu import EcuSimulator
@@ -310,35 +310,6 @@ def classify_survivors(
         classifications[result.mutation_id] = classification
         result.classification = classification
     return classifications
-
-
-def add_general_survivor_rules(
-    spec: EcuSpec, suite: list[TestCase], survivors: list[MutationResult]
-) -> list[str]:
-    """Add broad operator-family probes, never a case for one specific mutant."""
-    rules = sorted(
-        {item.operator for item in survivors if item.classification.startswith("genuine gap")}
-    )
-    if not rules:
-        return []
-    requests = _requests(spec)
-    for rule in rules:
-        for index, request in enumerate(requests):
-            clean = EcuSimulator(spec)
-            expected = clean.send(request)
-            suite.append(
-                TestCase(
-                    id=f"survivor-rule-{rule}-{index}",
-                    trace_to=[TraceRef(field_id=f"generated.{rule}", page=0)],
-                    preconditions={},
-                    setup_steps=[],
-                    steps=[request],
-                    environment={},
-                    expected=expected,
-                    tags=["generated", "survivor-rule", rule],
-                )
-            )
-    return rules
 
 
 def auto_mutation_score(spec: EcuSpec, mutants: list[MutationResult]) -> float:
