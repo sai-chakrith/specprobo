@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .audit import AuditLog
-from .models import AuditLogRow, Document, Review, TestCaseRow, TestRun, Workspace
+from .models import AuditLogRow, Document, ExtractedField, Review, TestCaseRow, TestRun, Workspace
 from .vectorstore import ScopedVectorStore
 
 
@@ -68,6 +68,26 @@ class WorkspaceRepository:
         )
         self.session.commit()
         return review
+
+    def propose_fields(self, fields: list[dict[str, Any]], actor: str) -> list[ExtractedField]:
+        self._authorize()
+        rows = [
+            ExtractedField(
+                id=str(uuid4()),
+                workspace_id=self.workspace_id,
+                document_id=str(field["document_id"]),
+                json_path=str(field["json_path"]),
+                value=dict(field["value"]),
+                created_at=datetime.now(UTC).replace(tzinfo=None),
+            )
+            for field in fields
+        ]
+        self.session.add_all(rows)
+        AuditLog(self.session).append(
+            self.workspace_id, "proposed_fields", actor, {"count": len(rows)}
+        )
+        self.session.commit()
+        return rows
 
     def generate_suite(self, suite_id: str, payload: dict[str, Any], actor: str) -> TestCaseRow:
         self._authorize()

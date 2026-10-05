@@ -23,7 +23,7 @@ uv run python -m specprobe.demo
 uv run python -m eval.mutation_eval
 ```
 
-The compliance layer uses SQLAlchemy 2 with SQLite triggers and hash-chained audit rows, plus a persistent Chroma backend and an in-memory fake for tests. Ingestion, API, UI, ODX/CDD, CAPL, and SocketCAN remain outside this pass.
+The compliance layer uses SQLAlchemy 2 with SQLite triggers and hash-chained audit rows, plus a persistent Chroma backend and an in-memory fake for tests. Synthetic OEM-A PDF and OEM-B XLSX documents are rendered under `data/synthetic/rendered/`; `specprobe.ingest` parses them into page/sheet-row provenance and proposes fields through the offline FakeLLM boundary. Proposed fields are persisted workspace-scoped and review decisions are audited; only approved or edited fields are eligible for suite generation. API, UI, ODX/CDD, CAPL, and SocketCAN remain outside this pass.
 
 ## Offline vectors
 
@@ -32,3 +32,5 @@ Tests and CI use the dependency-free deterministic `HashEmbedding`. Connected de
 ## Baseline evaluation
 
 The baseline is loaded from `tests/baseline_cases.json`. Its expected bytes are hand-authored hex values and are never computed from the oracle. Run `python -m eval.mutation_eval --author-time-minutes 35` to include measured human authoring time.
+
+The unmodified generated suite is 1,484 cases: 225 mutants are compilable, 172 are killed by output mismatch, 27 crash, and 41 survive. Of the survivors, 34 are equivalent and 7 are genuine gaps. Raw score is 76.4%; adjusted score is 90.1%. Run `python -m eval.extraction_eval` for the per-field extraction table; its offline FakeLLM run is 100% precision and recall for DID, length, and precondition fields for both OEMs.
