@@ -9,10 +9,12 @@ description = "Offline, deterministic UDS conformance test generation proof of c
 requires-python = ">=3.11"
 dependencies = [
   "pydantic>=2.8",
+  "sqlalchemy>=2.0",
+  "chromadb>=0.5",
 ]
 
 [project.optional-dependencies]
-dev = ["hypothesis>=6.110", "pytest>=8.3", "pytest-cov>=5.0", "ruff>=0.6", "mypy>=1.11", "types-openpyxl>=3.1"]
+dev = ["hypothesis>=6.110", "pytest>=8.3", "pytest-cov>=5.0", "ruff>=0.6", "mypy>=1.11", "types-openpyxl>=3.1", "udsoncan>=1.21"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -20,6 +22,7 @@ where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+python_files = ["test_*.py", "golden_vectors.py"]
 
 [tool.ruff]
 line-length = 100
