@@ -6,12 +6,11 @@
 - Deterministic, configurable NRC priority and oracle.
 - Independent stateful in-memory ECU simulator and transport.
 - Deterministic test generation and execution report foundation.
-- Workspace-scoped in-memory repository/vector boundary, audit log, API key check, and Fake/Ollama client seams.
+- Eight constructor-configured simulator mutations with differential and live-mutant tests.
+- Generator setup sequences, provenance traces, JSON/Markdown report models, demo, and mutation evaluation entrypoint.
 
 ## Stubbed or pending
 
-- PDF/XLSX/ODX ingestion, Ollama extraction, Chroma persistence, FastAPI, and Streamlit are pending later milestones.
-- SocketCAN transport is a documented Linux-only adapter to be added later.
-- CAPL export and production ECU validation are not implemented.
-- Synthetic document generation and evaluation commands are pending.
-- The current `make demo` path is implemented, but cannot be executed in this environment until Python dependencies are installed.
+- Ingestion, Chroma, SQLAlchemy, API authentication, Streamlit, SocketCAN, CAPL export, ODX/CDD parsing, and real Ollama extraction are stubbed/not included in this pass.
+- Production ECU validation is not implemented; validation is against the independent simulator only.
+- Conservative choice: a missing environment signal makes a precondition false.
