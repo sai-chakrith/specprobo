@@ -135,7 +135,7 @@ def render_oem_a_pdf(ground_truth: str | Path, output: str | Path) -> None:
                             styles["BodyText"],
                         )
                     )
-    SimpleDocTemplate(output, pagesize=letter, rightMargin=36, leftMargin=36).build(story)
+    SimpleDocTemplate(str(output), pagesize=letter, rightMargin=36, leftMargin=36).build(story)
 
 
 def render_oem_b_xlsx(ground_truth: str | Path, output: str | Path) -> None:

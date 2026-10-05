@@ -50,14 +50,16 @@ def extract_fields(
                     _provenance(row, str(row.values)),
                 )
             )
-            did_index += 1
-        length = row.values.get("Bytes") or row.values.get("Payload octets")
-        if length is not None:
-            fields.append(
-                ProposedField(
-                    f"dids[{index}].length_bytes", int(length), _provenance(row, str(row.values))
+            length = row.values.get("Bytes") or row.values.get("Payload octets")
+            if length is not None:
+                fields.append(
+                    ProposedField(
+                        f"dids[{did_index}].length_bytes",
+                        int(length),
+                        _provenance(row, str(row.values)),
+                    )
                 )
-            )
+            did_index += 1
     for block in blocks:
         for sentence in (part.strip() for part in block.text.split(".") if part.strip()):
             if not re.search(r"\b(?:when|while|requires)\b", sentence, re.IGNORECASE):
