@@ -9,15 +9,25 @@ class TestResult(BaseModel):
     passed: bool
     expected: bytes | None
     actual: bytes | None
+    trace_to: list[object]
 
 
 def run_suite(cases: list[TestCase], transport: Transport) -> list[TestResult]:
     results: list[TestResult] = []
     for case in cases:
-        ecu = getattr(transport, "ecu", None)
-        if ecu is not None:
-            ecu.current_session = int(case.preconditions.get("session", ecu.current_session))
-            ecu.security_level = int(case.preconditions.get("security", ecu.security_level))
-        actual = transport.send(case.steps[0])
-        results.append(TestResult(test_id=case.id, passed=actual == case.expected, expected=case.expected, actual=actual))
+        transport.set_environment(case.environment)
+        for request in case.setup_steps:
+            transport.send(request)
+        actual = None
+        for request in case.steps:
+            actual = transport.send(request)
+        results.append(
+            TestResult(
+                test_id=case.id,
+                passed=actual == case.expected,
+                expected=case.expected,
+                actual=actual,
+                trace_to=list(case.trace_to),
+            )
+        )
     return results
