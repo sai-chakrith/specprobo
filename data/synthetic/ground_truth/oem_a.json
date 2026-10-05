@@ -1,0 +1,35 @@
+{
+  "ecu_name": "SYNTH-OEM-A",
+  "oem": "OEM-A",
+  "version": "1.0",
+  "sessions": [{"id": 1, "name": "default"}, {"id": 3, "name": "extended"}],
+  "security_levels": [{"level": 0, "name": "locked"}, {"level": 1, "name": "level1"}],
+  "services": [
+    {"sid": 16, "name": "SessionControl"},
+    {"sid": 17, "name": "Reset", "subfunctions": [{"value": 1, "name": "hard"}]},
+    {"sid": 34, "name": "ReadDataByIdentifier"},
+    {"sid": 39, "name": "SecurityAccess"},
+    {"sid": 46, "name": "WriteDataByIdentifier"},
+    {"sid": 49, "name": "RoutineControl", "allowed_sessions": [3], "required_security_level": 1},
+    {"sid": 62, "name": "TesterPresent", "suppress_positive_response_supported": true}
+  ],
+  "dids": [
+    {"did": 4096, "name": "DID-0", "length_bytes": 4, "encoding": "bytes", "read_sessions": [1, 3], "write_sessions": [3], "read_security": 1, "write_security": 1, "preconditions": [{"kind": "signal", "signal": "signal_0", "op": "==", "value": true, "source_text": "signal_0 is true"}]},
+    {"did": 4097, "name": "DID-1", "length_bytes": 4, "encoding": "bytes", "read_sessions": [1, 3], "write_sessions": [3], "read_security": 1, "write_security": 1, "preconditions": [{"kind": "signal", "signal": "signal_1", "op": "==", "value": true, "source_text": "signal_1 is true"}]},
+    {"did": 4098, "name": "DID-2", "length_bytes": 4, "encoding": "bytes", "read_sessions": [1, 3], "write_sessions": [3], "read_security": 1, "write_security": 1, "preconditions": [{"kind": "signal", "signal": "signal_2", "op": "==", "value": true, "source_text": "signal_2 is true"}]},
+    {"did": 4099, "name": "DID-3", "length_bytes": 4, "encoding": "bytes", "read_sessions": [1, 3], "write_sessions": [3], "read_security": 1, "write_security": 1, "preconditions": [{"kind": "signal", "signal": "signal_3", "op": "==", "value": true, "source_text": "signal_3 is true"}]},
+    {"did": 4100, "name": "DID-4", "length_bytes": 4, "encoding": "bytes", "read_sessions": [1, 3], "write_sessions": [3], "read_security": 1, "write_security": 1, "preconditions": [{"kind": "signal", "signal": "signal_4", "op": "==", "value": true, "source_text": "signal_4 is true"}]},
+    {"did": 4101, "name": "DID-5", "length_bytes": 4, "encoding": "bytes", "read_sessions": [1, 3], "write_sessions": [3], "read_security": 1, "write_security": 1, "preconditions": [{"kind": "signal", "signal": "signal_5", "op": "==", "value": true, "source_text": "signal_5 is true"}]},
+    {"did": 4102, "name": "DID-6", "length_bytes": 4, "encoding": "bytes", "read_sessions": [1, 3], "write_sessions": [3], "read_security": 1, "write_security": 1},
+    {"did": 4103, "name": "DID-7", "length_bytes": 4, "encoding": "bytes", "read_sessions": [1, 3], "write_sessions": [3], "read_security": 1, "write_security": 1},
+    {"did": 4104, "name": "DID-8", "length_bytes": 4, "encoding": "bytes", "read_sessions": [1, 3], "write_sessions": [3], "read_security": 1, "write_security": 1},
+    {"did": 4105, "name": "DID-9", "length_bytes": 4, "encoding": "bytes", "read_sessions": [1, 3], "write_sessions": [3], "read_security": 1, "write_security": 1}
+  ],
+  "routines": [
+    {"rid": 8192, "name": "Routine-0", "control_types": [1, 2, 3], "sessions": [3], "security": 1, "parameter_lengths": {"1": 1, "2": 0, "3": 2}},
+    {"rid": 8193, "name": "Routine-1", "control_types": [1, 2, 3], "sessions": [3], "security": 1, "parameter_lengths": {"1": 1, "2": 0, "3": 2}},
+    {"rid": 8194, "name": "Routine-2", "control_types": [1, 2, 3], "sessions": [3], "security": 1, "parameter_lengths": {"1": 1, "2": 0, "3": 2}}
+  ],
+  "timing": {"p2_ms": 50, "p2_star_ms": 5000, "s3_ms": 5000},
+  "nrc_priority": [19, 18, 17, 127, 126, 51, 53, 36, 49, 34]
+}
