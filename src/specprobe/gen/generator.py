@@ -29,11 +29,21 @@ def _environment(conditions: list[Precondition], truth: bool) -> dict[str, objec
             continue
         value = condition.value
         if truth:
-            values[condition.signal] = value
+            if condition.op == "<" and isinstance(value, (int, float)):
+                values[condition.signal] = value - 1
+            elif condition.op == ">" and isinstance(value, (int, float)):
+                values[condition.signal] = value + 1
+            else:
+                values[condition.signal] = value
         elif isinstance(value, bool):
             values[condition.signal] = not value
         elif isinstance(value, (int, float)):
-            values[condition.signal] = value + 1
+            if condition.op in {"<", "<="}:
+                values[condition.signal] = value + 1
+            elif condition.op in {">", ">="}:
+                values[condition.signal] = value - 1
+            else:
+                values[condition.signal] = value + 1
         else:
             values[condition.signal] = "__false__"
     return values
@@ -399,7 +409,11 @@ def generate_suite(spec: EcuSpec, statuses: frozenset[str] = APPROVED_STATUSES) 
         routine = spec.routines[0]
         routine_path = "routines[0].rid"
         valid_control = routine.control_types[0] if routine.control_types else 1
-        valid_request = bytes((0x31, valid_control)) + routine.rid.to_bytes(2, "big")
+        valid_request = (
+            bytes((0x31, valid_control))
+            + routine.rid.to_bytes(2, "big")
+            + bytes(routine.parameter_lengths.get(valid_control, 0))
+        )
         nrc_requests.append(("nrc-7e-session", [], valid_request, [routine_path]))
         nrc_requests.append(("nrc-33-security", [], valid_request, [routine_path]))
     if spec.dids:

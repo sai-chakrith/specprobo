@@ -35,7 +35,7 @@ class FakeLLM:
         signal = signal_matches[-1]
         op: Literal["==", "!=", "<", "<=", ">", ">="]
         value_match = re.search(
-            r"(?:below|under|less than)\s+(-?\d+(?:\.\d+)?)\s*([A-Za-z/]+)?",
+            r"(?:below|under|less than)\s+(-?\d+(?:\.\d+)?)\s*([A-Za-z/°]+)?",
             text,
             re.IGNORECASE,
         )

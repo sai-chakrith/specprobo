@@ -22,6 +22,93 @@ def _load(path: str | Path) -> dict[str, Any]:
     return cast(dict[str, Any], json.loads(Path(path).read_text(encoding="utf-8")))
 
 
+def generate_precondition_statements(
+    target_type: str,
+    target_id: int,
+    target_name: str,
+    preconditions: list[dict[str, Any]],
+) -> list[str]:
+    if not preconditions:
+        return []
+    statements: list[str] = []
+    target_hex = f"0x{target_id:04X}"
+    action = "written" if target_type == "DID" else "executed"
+    action_gerund = "Writing" if target_type == "DID" else "Executing"
+    noun = "data identifier" if target_type == "DID" else "routine"
+
+    # Conjunction of two conditions ("when X and Y")
+    if len(preconditions) >= 2:
+        def _phrase(c: dict[str, Any]) -> str:
+            sig = c.get("signal", "")
+            if c.get("unit"):
+                return f"{sig} is below {c['value']} {c['unit']}"
+            elif c.get("op") == "<":
+                return f"{sig} is below {c['value']}"
+            return f"{sig} is true"
+
+        cond1 = _phrase(preconditions[0])
+        cond2 = _phrase(preconditions[1])
+        statements.append(
+            f"{target_type} {target_hex} may be {action} only when {cond1} and {cond2}."
+        )
+
+    for cond in preconditions:
+        sig = cond.get("signal", "")
+        unit = cond.get("unit")
+        val = cond.get("value")
+
+        if unit:
+            # 1. Comparison with units - affirmative
+            statements.append(
+                f"{target_type} {target_hex} may be {action} only when {sig} is below {val} {unit}."
+            )
+            # 2. Alternative comparison with units
+            statements.append(
+                f"{action_gerund} {target_type} {target_hex} requires {sig} to be under {val} {unit}."
+            )
+            # 3. Negation with units
+            statements.append(
+                f"{target_type} {target_hex} must not be {action} while {sig} is not below {val} {unit}."
+            )
+            # 4. Reference by name instead of hex
+            statements.append(
+                f"The {target_name} {noun} requires {sig} below {val} {unit}."
+            )
+        elif cond.get("op") == "<":
+            statements.append(
+                f"{target_type} {target_hex} may be {action} only when {sig} is below {val}."
+            )
+            statements.append(
+                f"{action_gerund} {target_type} {target_hex} requires {sig} to be under {val}."
+            )
+            statements.append(
+                f"{target_type} {target_hex} must not be {action} while {sig} is not below {val}."
+            )
+            statements.append(
+                f"The {target_name} {noun} requires {sig} below {val}."
+            )
+        else:
+            # Boolean condition
+            # 1. Affirmative wording
+            statements.append(
+                f"{target_type} {target_hex} may be {action} only when {sig} is true."
+            )
+            # 2. Affirmative requires
+            statements.append(
+                f"{action_gerund} {target_type} {target_hex} requires {sig} to be true."
+            )
+            # 3. Negation ("must not be written while X")
+            statements.append(
+                f"{target_type} {target_hex} must not be {action} while {sig} is false."
+            )
+            # 4. Reference by name instead of hex ("the VIN data identifier")
+            statements.append(
+                f"The {target_name} {noun} may be {action} only when {sig} is true."
+            )
+
+    return statements
+
+
 def render_oem_a_pdf(ground_truth: str | Path, output: str | Path) -> None:
     spec = _load(ground_truth)
     styles = getSampleStyleSheet()
@@ -77,22 +164,15 @@ def render_oem_a_pdf(ground_truth: str | Path, output: str | Path) -> None:
         ]
     )
     for item in spec["dids"]:
-        for condition in item.get("preconditions", []):
-            signal = condition["signal"]
-            did = f"0x{item['did']:04X}"
-            statements = (
-                f"DID {did} may be written only when {signal} is true.",
-                f"Writing DID {did} requires {signal} to be true.",
-                f"DID {did} must not be written while {signal} is false.",
-            )
-            story.extend(Paragraph(statement, styles["BodyText"]) for statement in statements)
-    story.append(
-        Paragraph(
-            "The six documented operating conditions are signal_0 through signal_5; "
-            "each must be true before its corresponding write is accepted.",
-            styles["BodyText"],
+        stmts = generate_precondition_statements(
+            "DID", item["did"], item["name"], item.get("preconditions", [])
         )
-    )
+        story.extend(Paragraph(s, styles["BodyText"]) for s in stmts)
+    for item in spec.get("routines", []):
+        stmts = generate_precondition_statements(
+            "Routine", item["rid"], item["name"], item.get("preconditions", [])
+        )
+        story.extend(Paragraph(s, styles["BodyText"]) for s in stmts)
     for section in (
         "sessions",
         "security_levels",
@@ -227,20 +307,15 @@ def render_oem_b_xlsx(ground_truth: str | Path, output: str | Path) -> None:
     appendix = workbook.create_sheet("Appendix")
     appendix.append(["Prose conditions"])
     for item in spec["dids"]:
-        for condition in item.get("preconditions", []):
-            appendix.append(
-                [
-                    f"DID 0x{item['did']:04X} may be written only when "
-                    f"{condition['signal']} is true."
-                ]
-            )
-            appendix.append(
-                [f"Writing DID 0x{item['did']:04X} requires {condition['signal']} to be true."]
-            )
-            appendix.append(
-                [
-                    f"DID 0x{item['did']:04X} must not be written while "
-                    f"{condition['signal']} is false."
-                ]
-            )
+        stmts = generate_precondition_statements(
+            "DID", item["did"], item["name"], item.get("preconditions", [])
+        )
+        for stmt in stmts:
+            appendix.append([stmt])
+    for item in spec.get("routines", []):
+        stmts = generate_precondition_statements(
+            "Routine", item["rid"], item["name"], item.get("preconditions", [])
+        )
+        for stmt in stmts:
+            appendix.append([stmt])
     workbook.save(output)

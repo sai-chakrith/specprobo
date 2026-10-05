@@ -15,20 +15,20 @@
   ],
   "dids": [
     {"did": 8192, "name": "B-DID-0", "length_bytes": 2, "encoding": "uint16", "read_sessions": [1, 4], "write_sessions": [4], "read_security": 2, "write_security": 2, "preconditions": [{"kind": "signal", "signal": "ignition_on", "op": "==", "value": true, "source_text": "ignition on"}]},
-    {"did": 8193, "name": "B-DID-1", "length_bytes": 2, "encoding": "uint16", "read_sessions": [1, 4], "write_sessions": [4], "read_security": 2, "write_security": 2, "preconditions": [{"kind": "signal", "signal": "speed_zero", "op": "==", "value": true, "source_text": "speed zero"}]},
-    {"did": 8194, "name": "B-DID-2", "length_bytes": 2, "encoding": "uint16", "read_sessions": [1, 4], "write_sessions": [4], "read_security": 2, "write_security": 2, "preconditions": [{"kind": "signal", "signal": "doors_closed", "op": "==", "value": true, "source_text": "doors closed"}]},
-    {"did": 8195, "name": "B-DID-3", "length_bytes": 2, "encoding": "uint16", "read_sessions": [1, 4], "write_sessions": [4], "read_security": 2, "write_security": 2, "preconditions": [{"kind": "signal", "signal": "battery_ok", "op": "==", "value": true, "source_text": "battery ok"}]},
-    {"did": 8196, "name": "B-DID-4", "length_bytes": 2, "encoding": "uint16", "read_sessions": [1, 4], "write_sessions": [4], "read_security": 2, "write_security": 2, "preconditions": [{"kind": "signal", "signal": "vehicle_stopped", "op": "==", "value": true, "source_text": "vehicle stopped"}]},
-    {"did": 8197, "name": "B-DID-5", "length_bytes": 2, "encoding": "uint16", "read_sessions": [1, 4], "write_sessions": [4], "read_security": 2, "write_security": 2, "preconditions": [{"kind": "signal", "signal": "service_brake", "op": "==", "value": true, "source_text": "service brake"}]},
+    {"did": 8193, "name": "B-DID-1", "length_bytes": 2, "encoding": "uint16", "read_sessions": [1, 4], "write_sessions": [4], "read_security": 2, "write_security": 2, "preconditions": [{"kind": "signal", "signal": "speed_kph", "op": "<", "value": 20, "unit": "km/h", "source_text": "speed_kph is below 20 km/h"}]},
+    {"did": 8194, "name": "B-DID-2", "length_bytes": 2, "encoding": "uint16", "read_sessions": [1, 4], "write_sessions": [4], "read_security": 2, "write_security": 2, "preconditions": [{"kind": "signal", "signal": "battery_v", "op": "<", "value": 12, "unit": "V", "source_text": "battery_v is below 12 V"}]},
+    {"did": 8195, "name": "B-DID-3", "length_bytes": 2, "encoding": "uint16", "read_sessions": [1, 4], "write_sessions": [4], "read_security": 2, "write_security": 2, "preconditions": [{"kind": "signal", "signal": "timeout_ms", "op": "<", "value": 100, "unit": "ms", "source_text": "timeout_ms is below 100 ms"}]},
+    {"did": 8196, "name": "B-DID-4", "length_bytes": 2, "encoding": "uint16", "read_sessions": [1, 4], "write_sessions": [4], "read_security": 2, "write_security": 2, "preconditions": [{"kind": "signal", "signal": "coolant_c", "op": "<", "value": 105, "unit": "°C", "source_text": "coolant_c is below 105 °C"}]},
+    {"did": 8197, "name": "B-DID-5", "length_bytes": 2, "encoding": "uint16", "read_sessions": [1, 4], "write_sessions": [4], "read_security": 2, "write_security": 2, "preconditions": [{"kind": "signal", "signal": "service_brake", "op": "==", "value": true, "source_text": "service brake"}, {"kind": "signal", "signal": "doors_closed", "op": "==", "value": true, "source_text": "doors closed"}]},
     {"did": 8198, "name": "B-DID-6", "length_bytes": 2, "encoding": "uint16", "read_sessions": [1, 4], "write_sessions": [4], "read_security": 2, "write_security": 2},
     {"did": 8199, "name": "B-DID-7", "length_bytes": 2, "encoding": "uint16", "read_sessions": [1, 4], "write_sessions": [4], "read_security": 2, "write_security": 2},
     {"did": 8200, "name": "B-DID-8", "length_bytes": 2, "encoding": "uint16", "read_sessions": [1, 4], "write_sessions": [4], "read_security": 2, "write_security": 2},
     {"did": 8201, "name": "B-DID-9", "length_bytes": 2, "encoding": "uint16", "read_sessions": [1, 4], "write_sessions": [4], "read_security": 2, "write_security": 2}
   ],
   "routines": [
-    {"rid": 12288, "name": "B-Routine-0", "control_types": [1, 2], "sessions": [4], "security": 2, "parameter_lengths": {"1": 2, "2": 0}},
-    {"rid": 12289, "name": "B-Routine-1", "control_types": [1, 2], "sessions": [4], "security": 2, "parameter_lengths": {"1": 2, "2": 0}},
-    {"rid": 12290, "name": "B-Routine-2", "control_types": [1, 2], "sessions": [4], "security": 2, "parameter_lengths": {"1": 2, "2": 0}}
+    {"rid": 12288, "name": "B-Routine-0", "control_types": [1, 2], "sessions": [4], "security": 2, "parameter_lengths": {"1": 2, "2": 0}, "preconditions": [{"kind": "signal", "signal": "routine_ready", "op": "==", "value": true, "source_text": "routine_ready is true"}]},
+    {"rid": 12289, "name": "B-Routine-1", "control_types": [1, 2], "sessions": [4], "security": 2, "parameter_lengths": {"1": 2, "2": 0}, "preconditions": [{"kind": "signal", "signal": "speed_kph", "op": "<", "value": 5, "unit": "km/h", "source_text": "speed_kph is below 5 km/h"}]},
+    {"rid": 12290, "name": "B-Routine-2", "control_types": [1, 2], "sessions": [4], "security": 2, "parameter_lengths": {"1": 2, "2": 0}, "preconditions": [{"kind": "signal", "signal": "battery_ok", "op": "==", "value": true, "source_text": "battery ok"}, {"kind": "signal", "signal": "doors_closed", "op": "==", "value": true, "source_text": "doors closed"}]}
   ],
   "timing": {"p2_ms": 75, "p2_star_ms": 7000, "s3_ms": 6000},
   "nrc_priority": [19, 18, 17, 126, 127, 33, 53, 36, 49, 34]
