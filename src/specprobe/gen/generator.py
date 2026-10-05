@@ -155,7 +155,7 @@ def generate_suite(spec: EcuSpec, statuses: frozenset[str] = APPROVED_STATUSES) 
                         if case:
                             cases[case.id] = case
                     if did.preconditions:
-                        for truth in (True, False):
+                        for truth in (True, False, None):
                             request = (
                                 bytes((0x2E,))
                                 + did.did.to_bytes(2, "big")
@@ -166,7 +166,11 @@ def generate_suite(spec: EcuSpec, statuses: frozenset[str] = APPROVED_STATUSES) 
                                 f"did-precondition-{did.did:x}-{truth}",
                                 _setup(spec, session.id, security),
                                 [request],
-                                _environment(did.preconditions, truth),
+                                    (
+                                        _environment(did.preconditions, truth is True)
+                                        if truth is not None
+                                        else {}
+                                    ),
                                 paths,
                                 statuses,
                             )
@@ -190,6 +194,42 @@ def generate_suite(spec: EcuSpec, statuses: frozenset[str] = APPROVED_STATUSES) 
                         if case:
                             cases[case.id] = case
     for index, service in enumerate(spec.services):
+        service_path = f"services[{index}].subfunctions"
+        nominal_length = {
+            0x10: 2,
+            0x11: 2,
+            0x27: 2,
+            0x22: 3,
+            0x2E: 3 + max((item.length_bytes for item in spec.dids), default=1),
+            0x31: 4 + max(
+                (max(item.parameter_lengths.values(), default=0) for item in spec.routines),
+                default=0,
+            ),
+            0x3E: 2,
+        }.get(service.sid, 1)
+        service_requests = [
+            b"" if length == 0 else bytes((service.sid,)) + bytes(length - 1)
+            for length in range(nominal_length + 3)
+        ]
+        if service.subfunctions:
+            service_requests.extend(
+                bytes((service.sid, value)) + bytes(max(0, nominal_length - 2))
+                for value in range(256)
+            )
+        for session in spec.sessions:
+            for security in sorted({0, max_security}):
+                for request_index, request in enumerate(service_requests):
+                    case = _make_case(
+                        spec,
+                        f"service-{service.sid:x}-{session.id}-{security}-{request_index}",
+                        _setup(spec, session.id, security),
+                        [request],
+                        {},
+                        [service_path],
+                        statuses,
+                    )
+                    if case:
+                        cases[case.id] = case
         if service.subfunctions:
             case = _make_case(
                 spec,
@@ -197,7 +237,7 @@ def generate_suite(spec: EcuSpec, statuses: frozenset[str] = APPROVED_STATUSES) 
                 [],
                 [bytes((service.sid, 0x7F))],
                 {},
-                [f"services[{index}].subfunctions"],
+                [service_path],
                 statuses,
             )
             if case:
@@ -263,4 +303,25 @@ def generate_suite(spec: EcuSpec, statuses: frozenset[str] = APPROVED_STATUSES) 
         )
         if collision:
             cases[collision.id] = collision
+        if routine.preconditions:
+            for truth in (True, False, None):
+                case = _make_case(
+                    spec,
+                    f"routine-precondition-{routine.rid:x}-{truth}",
+                    _setup(
+                        spec,
+                        routine.sessions[0] if routine.sessions else spec.sessions[0].id,
+                        routine.security or 0,
+                    ),
+                    [
+                        bytes((0x31, routine.control_types[0] if routine.control_types else 1))
+                        + routine.rid.to_bytes(2, "big")
+                        + bytes(routine.parameter_lengths.get(routine.control_types[0], 0))
+                    ],
+                    _environment(routine.preconditions, truth is True) if truth is not None else {},
+                    [f"routines[{index}].preconditions"],
+                    statuses,
+                )
+                if case:
+                    cases[case.id] = case
     return list(cases.values())
