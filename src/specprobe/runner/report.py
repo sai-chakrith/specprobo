@@ -10,6 +10,12 @@ class MutationResult:
     description: str
     field_ids: list[str]
     killed_by: list[str]
+    operator: str = ""
+    source_line: int = 0
+    original_code: str = ""
+    mutated_code: str = ""
+    compilable: bool = True
+    classification: str = ""
 
 
 @dataclass
