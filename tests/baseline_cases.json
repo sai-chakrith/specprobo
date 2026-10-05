@@ -1,0 +1,42 @@
+[
+  {
+    "id": "empty-request",
+    "setup": [],
+    "request": "",
+    "expected": "7f0013",
+    "environment": {},
+    "reason": "Empty diagnostic requests must return incorrect length."
+  },
+  {
+    "id": "extended-session",
+    "setup": [],
+    "request": "1003",
+    "expected": "5003",
+    "environment": {},
+    "reason": "The extended diagnostic session is supported."
+  },
+  {
+    "id": "tester-present",
+    "setup": [],
+    "request": "3e00",
+    "expected": "7e00",
+    "environment": {},
+    "reason": "A normal tester-present request receives a positive response."
+  },
+  {
+    "id": "unknown-did",
+    "setup": [],
+    "request": "22ffff",
+    "expected": "7f2231",
+    "environment": {},
+    "reason": "An unknown data identifier is out of range."
+  },
+  {
+    "id": "read-first-did",
+    "setup": [],
+    "request": "221000",
+    "expected": "62100000000000",
+    "environment": {},
+    "reason": "The first synthetic DID is readable in the default session."
+  }
+]
