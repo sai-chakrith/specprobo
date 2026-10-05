@@ -78,11 +78,14 @@ def render_oem_a_pdf(ground_truth: str | Path, output: str | Path) -> None:
     )
     for item in spec["dids"]:
         for condition in item.get("preconditions", []):
-            story.append(
-                Paragraph(
-                    f"DID 0x{item['did']:04X}: {condition['source_text']}.", styles["BodyText"]
-                )
+            signal = condition["signal"]
+            did = f"0x{item['did']:04X}"
+            statements = (
+                f"DID {did} may be written only when {signal} is true.",
+                f"Writing DID {did} requires {signal} to be true.",
+                f"DID {did} must not be written while {signal} is false.",
             )
+            story.extend(Paragraph(statement, styles["BodyText"]) for statement in statements)
     story.append(
         Paragraph(
             "The six documented operating conditions are signal_0 through signal_5; "
@@ -98,7 +101,40 @@ def render_oem_a_pdf(ground_truth: str | Path, output: str | Path) -> None:
         "timing",
         "nrc_priority",
     ):
-        story.append(Paragraph(f"{section}: {spec[section]}", styles["BodyText"]))
+        section_value = spec[section]
+        if section == "services":
+            section_value = [
+                {
+                    **item,
+                    "allowed_sessions": item.get("allowed_sessions", []),
+                    "required_security_level": item.get("required_security_level"),
+                    "subfunctions": item.get("subfunctions", []),
+                    "suppress_positive_response_supported": item.get(
+                        "suppress_positive_response_supported", False
+                    ),
+                }
+                for item in section_value
+            ]
+        if section == "routines":
+            section_value = [
+                {
+                    **item,
+                    "sessions": item.get("sessions", []),
+                    "security": item.get("security"),
+                    "preconditions": item.get("preconditions", []),
+                }
+                for item in section_value
+            ]
+        story.append(Paragraph(f"{section}: {section_value}", styles["BodyText"]))
+        if section in {"sessions", "security_levels", "services", "routines"}:
+            for index, item in enumerate(section_value):
+                for key, value in item.items():
+                    story.append(
+                        Paragraph(
+                            f"{section}[{index}].{key}: {json.dumps(value, sort_keys=True)}",
+                            styles["BodyText"],
+                        )
+                    )
     SimpleDocTemplate(output, pagesize=letter, rightMargin=36, leftMargin=36).build(story)
 
 
@@ -131,25 +167,45 @@ def render_oem_b_xlsx(ground_truth: str | Path, output: str | Path) -> None:
             ],
         ),
         "Routines": (
-            ["Routine identifier", "Operation", "Controls", "Parameter octets"],
+            [
+                "Routine identifier",
+                "Operation",
+                "Controls",
+                "Parameter octets",
+                "Allowed modes",
+                "Access tier",
+                "Preconditions",
+            ],
             [
                 [
                     f"0x{item['rid']:04X}",
                     item["name"],
                     ",".join(map(str, item["control_types"])),
                     str(item["parameter_lengths"]),
+                    ",".join(map(str, item.get("sessions", []))),
+                    json.dumps(item.get("security")),
+                    str(item.get("preconditions", [])),
                 ]
                 for item in spec["routines"]
             ],
         ),
         "Services": (
-            ["Service code", "Service label", "Session gate", "Security gate"],
+            [
+                "Service code",
+                "Service label",
+                "Session gate",
+                "Security gate",
+                "Subfunctions",
+                "SPR",
+            ],
             [
                 [
                     f"0x{item['sid']:02X}",
                     item["name"],
                     ",".join(map(str, item.get("allowed_sessions", []))),
-                    item.get("required_security_level"),
+                    json.dumps(item.get("required_security_level")),
+                    str(item.get("subfunctions", [])),
+                    item.get("suppress_positive_response_supported", False),
                 ]
                 for item in spec["services"]
             ],
@@ -170,11 +226,21 @@ def render_oem_b_xlsx(ground_truth: str | Path, output: str | Path) -> None:
             sheet.append(row)
     appendix = workbook.create_sheet("Appendix")
     appendix.append(["Prose conditions"])
-    appendix.append(
-        [
-            "The six operating conditions are ignition_on, speed_zero, doors_closed, "
-            "battery_ok, vehicle_stopped, and service_brake."
-        ]
-    )
-    appendix.append(["Each condition must be true for its matching data identifier write."])
+    for item in spec["dids"]:
+        for condition in item.get("preconditions", []):
+            appendix.append(
+                [
+                    f"DID 0x{item['did']:04X} may be written only when "
+                    f"{condition['signal']} is true."
+                ]
+            )
+            appendix.append(
+                [f"Writing DID 0x{item['did']:04X} requires {condition['signal']} to be true."]
+            )
+            appendix.append(
+                [
+                    f"DID 0x{item['did']:04X} must not be written while "
+                    f"{condition['signal']} is false."
+                ]
+            )
     workbook.save(output)
