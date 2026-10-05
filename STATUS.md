@@ -13,10 +13,10 @@
 
 ## Stubbed or pending
 
-- Ingestion front-half is real: ReportLab renders OEM-A PDF, openpyxl renders OEM-B XLSX, pdfplumber/openpyxl return provenance-bearing blocks/rows, deterministic extraction proposes fields, FakeLLM normalizes prose conditions, and SQLAlchemy persists proposed fields with audited review decisions. Ollama is an opt-in interface and was not run offline. API authentication/routes, Streamlit, SocketCAN, CAPL export, and ODX/CDD parsing remain pending.
+- Ingestion and review are real: ReportLab renders OEM-A PDF, openpyxl renders OEM-B XLSX, pdfplumber/openpyxl return provenance-bearing blocks/rows, deterministic extraction proposes all structured spec sections, FakeLLM parses whole prose sentences, and OllamaClient is an opt-in JSON-schema/retry client. SQLAlchemy persists proposed fields with audited review decisions. FastAPI routes and the Streamlit review client are functional and offline-testable. SocketCAN, CAPL export, and ODX/CDD parsing remain pending.
 - Production ECU validation is not implemented; validation is against the independent simulator only.
 - Conservative choice: a missing environment signal makes a precondition false.
-- Mechanical evaluation reports total, compilable, output mismatch, crash, survived, equivalent, genuine gap, raw score, and adjusted score. The generated suite is exactly `generate_suite(spec)`, with 2,014 cases and no survivor padding. The current generated result is raw 81.5% and adjusted 93.9%: 30 equivalent survivors and zero genuine gaps. Survivors are checked against at least 5,000 deterministic hypothesis-driven sequences. The security-access, tester-present, and NRC families are general rules, not mutant-targeted cases. Excluded helper and transport-wrapper lines are explicitly printed.
+- Mechanical evaluation reports total, compilable, output mismatch, crash, survived, equivalent, genuine gap, raw score, and adjusted score. The generated suite is exactly `generate_suite(spec)`, with 2,014 cases and no survivor padding. The current generated result is raw 81.5% and adjusted 93.9%: 30 equivalent survivors and zero genuine gaps. Survivors are checked against at least 5,000 deterministic hypothesis-driven sequences. The security-access, tester-present, and NRC families are general rules, not mutant-targeted cases. Excluded helper and transport-wrapper lines are explicitly printed. F1 validates both baseline and generated suites on the clean simulator before scoring.
 
 ### Equivalent survivor review
 
