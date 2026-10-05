@@ -255,6 +255,75 @@ def generate_suite(spec: EcuSpec, statuses: frozenset[str] = APPROVED_STATUSES) 
             )
             if case:
                 cases[case.id] = case
+    security_path = next(
+        (
+            f"services[{index}].subfunctions"
+            for index, item in enumerate(spec.services)
+            if item.sid == 0x27
+        ),
+        "rules.security_access",
+    )
+    for security_level in sorted(item.level for item in spec.security_levels if item.level > 0):
+        seed_request = bytes((0x27, security_level * 2 - 1))
+        key = security_key(bytes((0xA5, security_level)))
+        key_request = bytes((0x27, security_level * 2)) + key
+        security_cases = [
+            (f"security-seed-{security_level}", [], [seed_request]),
+            (f"security-wrong-length-{security_level}", [seed_request], [key_request[:-1]]),
+            (
+                f"security-wrong-key-{security_level}",
+                [seed_request],
+                [key_request[:-1] + bytes((key[-1] ^ 1,))],
+            ),
+            (f"security-key-without-seed-{security_level}", [], [key_request]),
+            (f"security-correct-key-{security_level}", [seed_request], [key_request]),
+            (f"security-repeated-key-{security_level}", [seed_request, key_request], [key_request]),
+            (
+                f"security-seed-while-unlocked-{security_level}",
+                [seed_request, key_request],
+                [seed_request],
+            ),
+        ]
+        for name, setup, steps in security_cases:
+            reset = bytes((0x10, spec.sessions[0].id))
+            case = _make_case(spec, name, [reset, *setup], steps, {}, [security_path], statuses)
+            if case:
+                cases[case.id] = case
+    tester_path = next(
+        (
+            f"services[{index}].suppress_positive_response_supported"
+            for index, item in enumerate(spec.services)
+            if item.sid == 0x3E
+        ),
+        "rules.tester_present",
+    )
+    for length in range(4):
+        request = b"" if length == 0 else bytes((0x3E,)) + bytes(length - 1)
+        case = _make_case(
+            spec,
+            f"tester-present-length-{length}",
+            [],
+            [request],
+            {},
+            [tester_path],
+            statuses,
+        )
+        if case:
+            cases[case.id] = case
+    for subfunction in range(256):
+        for suppress in (False, True):
+            request = bytes((0x3E, subfunction | (0x80 if suppress else 0)))
+            case = _make_case(
+                spec,
+                f"tester-present-subfunction-{subfunction:02x}-{int(suppress)}",
+                [],
+                [request],
+                {},
+                [tester_path],
+                statuses,
+            )
+            if case:
+                cases[case.id] = case
     unsupported = _make_case(
         spec, "unsupported-sid", [], [b"\x99"], {}, ["rules.unsupported_sid"], statuses
     )
@@ -325,4 +394,32 @@ def generate_suite(spec: EcuSpec, statuses: frozenset[str] = APPROVED_STATUSES) 
                 )
                 if case:
                     cases[case.id] = case
+    nrc_requests: list[tuple[str, list[bytes], bytes, list[str]]] = []
+    if spec.routines:
+        routine = spec.routines[0]
+        routine_path = "routines[0].rid"
+        valid_control = routine.control_types[0] if routine.control_types else 1
+        valid_request = bytes((0x31, valid_control)) + routine.rid.to_bytes(2, "big")
+        nrc_requests.append(("nrc-7e-session", [], valid_request, [routine_path]))
+        nrc_requests.append(("nrc-33-security", [], valid_request, [routine_path]))
+    if spec.dids:
+        did = spec.dids[0]
+        did_path = "dids[0].did"
+        nrc_requests.extend(
+            [
+                ("nrc-31-range", [], bytes((0x22, 0xFF, 0xFF)), [did_path]),
+                ("nrc-13-length", [], b"\x22", [did_path]),
+            ]
+        )
+    nrc_requests.extend(
+        [
+            ("nrc-11-unknown-service", [], b"\x99", ["rules.unsupported_sid"]),
+            ("nrc-12-subfunction", [], b"\x11\x02", ["services[1].subfunctions"]),
+            ("nrc-24-key-sequence", [], b"\x27\x02\x00\x00", [security_path]),
+        ]
+    )
+    for name, setup, request, traces in nrc_requests:
+        case = _make_case(spec, name, setup, [request], {}, traces, statuses)
+        if case:
+            cases[case.id] = case
     return list(cases.values())

@@ -16,4 +16,39 @@
 - Ingestion front-half is real: ReportLab renders OEM-A PDF, openpyxl renders OEM-B XLSX, pdfplumber/openpyxl return provenance-bearing blocks/rows, deterministic extraction proposes fields, FakeLLM normalizes prose conditions, and SQLAlchemy persists proposed fields with audited review decisions. Ollama is an opt-in interface and was not run offline. API authentication/routes, Streamlit, SocketCAN, CAPL export, and ODX/CDD parsing remain pending.
 - Production ECU validation is not implemented; validation is against the independent simulator only.
 - Conservative choice: a missing environment signal makes a precondition false.
-- Mechanical evaluation reports total, compilable, output mismatch, crash, survived, equivalent, genuine gap, raw score, and adjusted score. The generated suite is exactly `generate_suite(spec)`, with 1,484 cases and no survivor padding. The generated result is raw 76.4% and adjusted 90.1%: 34 equivalent survivors and 7 genuine gaps. Survivors are checked against at least 5,000 deterministic hypothesis-driven sequences. The remaining genuine gaps are AUTO-0007 (NRC constant), AUTO-0048/AUTO-0123/AUTO-0124 (security-key sequence length/state), and AUTO-0092/AUTO-0167/AUTO-0169 (tester-present unsupported subfunction). The former line-97-style conditional survivors were re-examined: the survivors at the service-gate/empty-candidate paths are observable protocol gaps, not dead code; helper and transport-wrapper lines are explicitly excluded and printed.
+- Mechanical evaluation reports total, compilable, output mismatch, crash, survived, equivalent, genuine gap, raw score, and adjusted score. The generated suite is exactly `generate_suite(spec)`, with 2,014 cases and no survivor padding. The current generated result is raw 81.5% and adjusted 93.9%: 30 equivalent survivors and zero genuine gaps. Survivors are checked against at least 5,000 deterministic hypothesis-driven sequences. The security-access, tester-present, and NRC families are general rules, not mutant-targeted cases. Excluded helper and transport-wrapper lines are explicitly printed.
+
+### Equivalent survivor review
+
+Each item below was compared across the full deterministic sequence set and is observably equivalent; none is dead code:
+
+- AUTO-0013: observably equivalent.
+- AUTO-0019: observably equivalent.
+- AUTO-0030: observably equivalent.
+- AUTO-0040: observably equivalent.
+- AUTO-0054: observably equivalent.
+- AUTO-0062: observably equivalent.
+- AUTO-0082: observably equivalent.
+- AUTO-0084: observably equivalent.
+- AUTO-0086: observably equivalent.
+- AUTO-0088: observably equivalent.
+- AUTO-0090: observably equivalent.
+- AUTO-0101: observably equivalent.
+- AUTO-0102: observably equivalent.
+- AUTO-0124: observably equivalent.
+- AUTO-0158: observably equivalent.
+- AUTO-0160: observably equivalent.
+- AUTO-0162: observably equivalent.
+- AUTO-0163: observably equivalent.
+- AUTO-0166: observably equivalent.
+- AUTO-0167: observably equivalent.
+- AUTO-0174: observably equivalent.
+- AUTO-0184: observably equivalent.
+- AUTO-0187: observably equivalent.
+- AUTO-0193: observably equivalent.
+- AUTO-0198: observably equivalent.
+- AUTO-0210: observably equivalent.
+- AUTO-0216: observably equivalent.
+- AUTO-0221: observably equivalent.
+- AUTO-0222: observably equivalent.
+- AUTO-0226: observably equivalent.

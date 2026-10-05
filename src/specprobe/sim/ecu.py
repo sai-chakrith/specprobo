@@ -183,7 +183,9 @@ class EcuSimulator(Transport):
                 return self._negative(SID_SECURITY_ACCESS, NRC_INCORRECT_LENGTH)
             self.state = SimulatorState(self.state.session, self.state.security_level, level)
             return bytes((0x67, subfunction)) + _seed(level)
-        if len(request) != 4 or self.state.pending_security_level != level:
+        if len(request) != 4:
+            return self._negative(SID_SECURITY_ACCESS, NRC_INCORRECT_LENGTH)
+        if self.state.pending_security_level != level:
             return self._negative(SID_SECURITY_ACCESS, NRC_REQUEST_SEQUENCE_ERROR)
         if request[2:] != _key(_seed(level)):
             return self._negative(SID_SECURITY_ACCESS, NRC_INVALID_KEY)
