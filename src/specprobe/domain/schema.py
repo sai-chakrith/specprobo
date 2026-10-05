@@ -10,6 +10,8 @@ class Precondition(BaseModel):
     signal: str | None = None
     op: Literal["==", "!=", "<", "<=", ">", ">="] | None = None
     value: str | int | float | bool | None = None
+    unit: str | None = None
+    target: str | None = None
     source_text: str
 
 
