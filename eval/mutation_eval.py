@@ -1,13 +1,29 @@
 import argparse
+from collections.abc import Sequence
 from time import perf_counter
 
 from specprobe.demo import build_spec
+from specprobe.domain.schema import EcuSpec
+from specprobe.domain.testcase import TestCase
 from specprobe.gen.generator import generate_suite
 from specprobe.sim.auto_mutants import (
     classify_survivors,
     run_auto_mutants,
 )
 from tests.baseline_suite import build_baseline_suite
+
+
+def validate_suite(spec: EcuSpec, suite: Sequence[TestCase]) -> None:
+    from specprobe.runner.executor import run_suite
+    from specprobe.sim.ecu import EcuSimulator
+
+    failures = [
+        result.test_id
+        for result in run_suite(list(suite), EcuSimulator(spec))
+        if not result.passed
+    ]
+    if failures:
+        raise ValueError(f"suite failed on clean simulator: {failures}")
 
 
 def main() -> None:
@@ -20,6 +36,7 @@ def main() -> None:
     generation_time = perf_counter() - started
     rows: list[tuple[str, int, int, int, int, int, int, int, float, float]] = []
     for name, suite in (("baseline", build_baseline_suite()), ("generated", generated)):
+        validate_suite(spec, suite)
         auto = run_auto_mutants(spec, suite)
         compilable = [item for item in auto if item.compilable]
         survivors = [item for item in compilable if not item.killed_by and not item.crashed_by]

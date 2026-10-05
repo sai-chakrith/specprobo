@@ -35,8 +35,8 @@
     "id": "read-first-did",
     "setup": [],
     "request": "221000",
-    "expected": "62100000000000",
+    "expected": "7f2233",
     "environment": {},
-    "reason": "The first synthetic DID is readable in the default session."
+    "reason": "The first synthetic DID requires security access in the default session."
   }
 ]

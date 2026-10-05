@@ -1,6 +1,8 @@
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
+from eval.mutation_eval import validate_suite
+from specprobe.demo import build_spec
 from specprobe.domain.schema import (
     DataIdentifier,
     EcuSpec,
@@ -19,6 +21,7 @@ from specprobe.runner.executor import run_suite
 from specprobe.sim.ecu import EcuSimulator
 from specprobe.sim.mutations import MUTATION_DESCRIPTIONS, Mutation, MutationId, mutant_simulator
 from specprobe.sim.transport import InMemoryTransport
+from tests.baseline_suite import build_baseline_suite
 
 
 def sample_spec() -> EcuSpec:
@@ -136,6 +139,12 @@ def test_generated_case_expectations_match_oracle() -> None:
             response, state = step(spec, state, case.environment, request)
             expected = response.bytes
         assert case.expected == expected, case.id
+
+
+def test_shipped_suites_pass_clean_validation() -> None:
+    spec = build_spec()
+    validate_suite(spec, generate_suite(spec))
+    validate_suite(spec, build_baseline_suite())
 
 
 def _mutation_case(
