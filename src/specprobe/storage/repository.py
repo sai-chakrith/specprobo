@@ -56,9 +56,9 @@ class WorkspaceRepository:
         if decision not in {"approved", "edited", "rejected"}:
             raise ValueError("invalid review decision")
         field = self.session.get(ExtractedField, field_id)
-        if field is None or field.workspace_id != self.workspace_id:
+        if field is not None and field.workspace_id != self.workspace_id:
             raise PermissionError("field access denied")
-        if value is not None:
+        if field is not None and value is not None:
             field.value = dict(value)
         review = Review(
             id=str(uuid4()),
@@ -94,7 +94,11 @@ class WorkspaceRepository:
         decisions: dict[str, str] = {}
         for review in reviews:
             decisions[review.field_id] = review.decision
-        return [field for field_id, field in fields.items() if decisions.get(field_id) in {"approved", "edited"}]
+        return [
+            field
+            for field_id, field in fields.items()
+            if decisions.get(field_id) in {"approved", "edited"}
+        ]
 
     def propose_fields(self, fields: list[dict[str, Any]], actor: str) -> list[ExtractedField]:
         self._authorize()

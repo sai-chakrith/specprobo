@@ -140,7 +140,12 @@ def extract_spec_fields(
             "Priority": [("nrc_priority", _csv_ints(row.values.get("NRC order")))],
         }
         for path, value in mappings.get(sheet, []):
-            if value is not None and value != "":
+            keep_explicit_null = (
+                sheet == "Services"
+                and path.endswith("required_security_level")
+                and "Security gate" in row.values
+            )
+            if (value is not None and value != "") or keep_explicit_null:
                 fields.append(ProposedField(path, value, _provenance(row, str(row.values))))
     for block in blocks:
         for section, value in _section_values(block.text):
