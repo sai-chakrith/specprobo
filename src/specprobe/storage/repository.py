@@ -49,8 +49,17 @@ class WorkspaceRepository:
             self.session.scalars(select(Document).where(Document.workspace_id == self.workspace_id))
         )
 
-    def review_field(self, field_id: str, decision: str, reviewer: str) -> Review:
+    def review_field(
+        self, field_id: str, decision: str, reviewer: str, value: dict[str, Any] | None = None
+    ) -> Review:
         self._authorize()
+        if decision not in {"approved", "edited", "rejected"}:
+            raise ValueError("invalid review decision")
+        field = self.session.get(ExtractedField, field_id)
+        if field is None or field.workspace_id != self.workspace_id:
+            raise PermissionError("field access denied")
+        if value is not None:
+            field.value = dict(value)
         review = Review(
             id=str(uuid4()),
             workspace_id=self.workspace_id,
@@ -68,6 +77,24 @@ class WorkspaceRepository:
         )
         self.session.commit()
         return review
+
+    def list_fields(self) -> list[ExtractedField]:
+        self._authorize()
+        return list(
+            self.session.scalars(
+                select(ExtractedField).where(ExtractedField.workspace_id == self.workspace_id)
+            )
+        )
+
+    def list_approved_fields(self) -> list[ExtractedField]:
+        fields = {field.id: field for field in self.list_fields()}
+        reviews = self.session.scalars(
+            select(Review).where(Review.workspace_id == self.workspace_id)
+        )
+        decisions: dict[str, str] = {}
+        for review in reviews:
+            decisions[review.field_id] = review.decision
+        return [field for field_id, field in fields.items() if decisions.get(field_id) in {"approved", "edited"}]
 
     def propose_fields(self, fields: list[dict[str, Any]], actor: str) -> list[ExtractedField]:
         self._authorize()

@@ -1,5 +1,6 @@
 from sqlalchemy import Engine, create_engine
 from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.pool import StaticPool
 
 from .models import Base
 
@@ -20,7 +21,10 @@ END
 
 
 def create_database(url: str = "sqlite:///:memory:") -> Engine:
-    engine = create_engine(url)
+    options: dict[str, object] = {}
+    if url == "sqlite:///:memory:":
+        options = {"connect_args": {"check_same_thread": False}, "poolclass": StaticPool}
+    engine = create_engine(url, **options)
     Base.metadata.create_all(engine)
     with engine.begin() as connection:
         connection.exec_driver_sql(_UPDATE_TRIGGER)
