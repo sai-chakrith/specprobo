@@ -12,7 +12,8 @@ class Base(DeclarativeBase):
 class Workspace(Base):
     __tablename__ = "workspaces"
     id: Mapped[str] = mapped_column(String(128), primary_key=True)
-    api_key: Mapped[str] = mapped_column(String(256), nullable=False)
+    api_key_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    api_key_salt: Mapped[str] = mapped_column(String(64), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
 
 

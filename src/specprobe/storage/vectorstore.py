@@ -1,3 +1,6 @@
+import hashlib
+import math
+import os
 from pathlib import Path
 from typing import Protocol, cast
 
@@ -40,24 +43,100 @@ class ChromaCollection(Protocol):
 
 
 class ChromaClient(Protocol):
-    def get_or_create_collection(self, name: str) -> ChromaCollection: ...
+    def get_or_create_collection(
+        self, name: str, embedding_function: object
+    ) -> ChromaCollection: ...
+
+
+class HashEmbedding:
+    """Small deterministic embedding that never reaches the network."""
+
+    def __init__(self, dimension: int = 32) -> None:
+        self.dimension = dimension
+
+    def __call__(self, input: list[str]) -> list[list[float]]:
+        vectors: list[list[float]] = []
+        for text in input:
+            digest = hashlib.sha256(text.encode("utf-8")).digest()
+            values = [digest[index % len(digest)] / 255.0 for index in range(self.dimension)]
+            norm = math.sqrt(sum(value * value for value in values)) or 1.0
+            vectors.append([value / norm for value in values])
+        return vectors
+
+    def embed_query(self, input: str) -> list[float]:
+        return self([input])[0]
+
+    def name(self) -> str:
+        return "specprobe-hash"
+
+    def is_legacy(self) -> bool:
+        return False
+
+    def default_space(self) -> str:
+        return "cosine"
+
+    def supported_spaces(self) -> set[str]:
+        return {"cosine"}
+
+
+class LocalEmbedding:
+    def __init__(self, model_path: str | Path | None = None) -> None:
+        path = Path(model_path or os.environ.get("SPECPROBE_EMBED_MODEL_PATH", ""))
+        if not path.is_dir():
+            raise RuntimeError(
+                "SPECPROBE_EMBED_MODEL_PATH must point to a locally downloaded "
+                "BGE-small or E5-small model directory"
+            )
+        try:
+            from sentence_transformers import SentenceTransformer  # type: ignore[import-not-found]
+        except ImportError as error:
+            raise RuntimeError(
+                "LocalEmbedding requires sentence-transformers; install it for local model use"
+            ) from error
+        self._model = SentenceTransformer(str(path), local_files_only=True)
+
+    def __call__(self, input: list[str]) -> list[list[float]]:
+        return cast(list[list[float]], self._model.encode(input, convert_to_numpy=False).tolist())
+
+    def embed_query(self, input: str) -> list[float]:
+        return self([input])[0]
+
+    def name(self) -> str:
+        return "specprobe-local"
+
+    def is_legacy(self) -> bool:
+        return False
+
+    def default_space(self) -> str:
+        return "cosine"
+
+    def supported_spaces(self) -> set[str]:
+        return {"cosine"}
 
 
 class ChromaVectorBackend:
-    def __init__(self, path: str | Path) -> None:
+    def __init__(self, path: str | Path, embedding_function: object) -> None:
         try:
             import chromadb
         except ImportError as error:
             raise RuntimeError("ChromaDB is required for the persistent vector backend") from error
-        self._client = cast(ChromaClient, chromadb.PersistentClient(path=str(path)))
+        settings = chromadb.config.Settings(anonymized_telemetry=False)
+        self._embedding_function = embedding_function
+        self._client = cast(
+            ChromaClient, chromadb.PersistentClient(path=str(path), settings=settings)
+        )
 
     def add(self, collection: str, document_id: str, text: str, metadata: dict[str, str]) -> None:
-        target = self._client.get_or_create_collection(collection)
+        target = self._client.get_or_create_collection(
+            collection, embedding_function=self._embedding_function
+        )
         safe_metadata = metadata or {"workspace": collection.split("__", 1)[0][3:]}
         target.add(ids=[document_id], documents=[text], metadatas=[safe_metadata])
 
     def list(self, collection: str) -> list[dict[str, object]]:
-        target = self._client.get_or_create_collection(collection)
+        target = self._client.get_or_create_collection(
+            collection, embedding_function=self._embedding_function
+        )
         data = target.get()
         ids = cast(list[str], data.get("ids", []))
         documents = cast(list[str], data.get("documents", []))

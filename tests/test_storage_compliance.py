@@ -1,3 +1,4 @@
+import socket
 from pathlib import Path
 
 import pytest
@@ -6,10 +7,11 @@ from sqlalchemy.exc import IntegrityError
 
 from specprobe.storage.audit import AuditLog
 from specprobe.storage.db import create_database, session_factory
-from specprobe.storage.models import AuditLogRow
+from specprobe.storage.models import AuditLogRow, Workspace
 from specprobe.storage.repository import WorkspaceRepository, create_workspace
 from specprobe.storage.vectorstore import (
     ChromaVectorBackend,
+    HashEmbedding,
     InMemoryVectorBackend,
     collection_name,
     scoped_store,
@@ -43,6 +45,29 @@ def test_workspace_repository_and_vectors_are_isolated() -> None:
     assert repository_a.vectors.list("oem")
     assert repository_b.vectors.list("oem") == []
     assert collection_name("a", "oem") != collection_name("b", "oem")
+
+
+def test_workspace_api_keys_are_salted_and_hashed() -> None:
+    _, _, session = _repositories()
+    workspace = session.get(Workspace, "a")
+    assert workspace is not None
+    assert workspace.api_key_hash != "key-a"
+    assert workspace.api_key_salt
+    assert len(workspace.api_key_hash) == 64
+
+
+def test_persistent_vectors_never_open_a_socket(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pytest.importorskip("chromadb")
+
+    def reject_connect(*args: object, **kwargs: object) -> None:
+        raise AssertionError("vector persistence attempted a network connection")
+
+    monkeypatch.setattr(socket.socket, "connect", reject_connect)
+    backend = ChromaVectorBackend(tmp_path / "chroma-offline", HashEmbedding())
+    scoped_store(backend, "offline").add("oem", "doc", "offline", {})
+    assert scoped_store(backend, "offline").list("oem")
 
 
 def test_audit_database_triggers_reject_update_and_delete() -> None:
@@ -84,7 +109,7 @@ def test_review_generation_and_run_are_audited() -> None:
 
 def test_persistent_chroma_backend_uses_workspace_collections(tmp_path: Path) -> None:
     pytest.importorskip("chromadb")
-    backend = ChromaVectorBackend(tmp_path / "chroma")
+    backend = ChromaVectorBackend(tmp_path / "chroma", HashEmbedding())
     scoped_store(backend, "a").add("oem", "a-doc", "A", {})
     assert scoped_store(backend, "a").list("oem")
     assert scoped_store(backend, "b").list("oem") == []

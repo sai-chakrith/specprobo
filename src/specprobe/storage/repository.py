@@ -1,3 +1,6 @@
+import hashlib
+import hmac
+import secrets
 from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
@@ -21,7 +24,10 @@ class WorkspaceRepository:
 
     def _authorize(self) -> None:
         workspace = self.session.get(Workspace, self.workspace_id)
-        if workspace is None or workspace.api_key != self.api_key:
+        if workspace is None:
+            raise PermissionError("workspace access denied")
+        candidate = _hash_api_key(self.api_key, workspace.api_key_salt)
+        if not hmac.compare_digest(workspace.api_key_hash, candidate):
             raise PermissionError("workspace access denied")
 
     def add_document(self, name: str, content: str) -> Document:
@@ -104,9 +110,17 @@ class WorkspaceRepository:
 
 
 def create_workspace(session: Session, workspace_id: str, api_key: str) -> Workspace:
+    salt = secrets.token_bytes(32)
     workspace = Workspace(
-        id=workspace_id, api_key=api_key, created_at=datetime.now(UTC).replace(tzinfo=None)
+        id=workspace_id,
+        api_key_hash=_hash_api_key(api_key, salt.hex()),
+        api_key_salt=salt.hex(),
+        created_at=datetime.now(UTC).replace(tzinfo=None),
     )
     session.add(workspace)
     session.commit()
     return workspace
+
+
+def _hash_api_key(api_key: str, salt: str) -> str:
+    return hashlib.sha256(bytes.fromhex(salt) + api_key.encode("utf-8")).hexdigest()
