@@ -118,9 +118,7 @@ def excluded_mutation_lines(tree: ast.Module) -> list[int]:
 
 def _compile(tree: ast.Module, filename: str, name: str) -> type[EcuSimulator]:
     class_node = next(
-        node
-        for node in tree.body
-        if isinstance(node, ast.ClassDef) and node.name == "EcuSimulator"
+        node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == "EcuSimulator"
     )
     class_node.name = name
     class_node.bases = [ast.Name(id="EcuSimulator", ctx=ast.Load())]
@@ -147,11 +145,7 @@ def _candidate_specs(tree: ast.Module, spec: EcuSpec) -> list[tuple[str, ast.AST
                 ast.Gt: ast.LtE(),
             }
             replacement = next(
-                (
-                    value
-                    for key, value in replacements.items()
-                    if isinstance(node.ops[0], key)
-                ),
+                (value for key, value in replacements.items() if isinstance(node.ops[0], key)),
                 None,
             )
             if replacement is not None:
@@ -314,12 +308,7 @@ def _sequences(spec: EcuSpec, count: int) -> list[list[tuple[dict[str, object], 
             templates.append([({}, bytes((0x10, session.id))), ({}, seed), ({}, key)])
     signal_values = [dict(signals), {}]
     for environment in signal_values:
-        templates.append(
-            [
-                (environment, request)
-                for request in requests[: min(8, len(requests))]
-            ]
-        )
+        templates.append([(environment, request) for request in requests[: min(8, len(requests))]])
     random_sequences = [
         [
             (dict(signals) if rng.randrange(3) else {}, rng.choice(requests))
@@ -358,9 +347,7 @@ def classify_survivors(
             if differs:
                 break
         classification = (
-            "genuine gap: observable difference"
-            if differs
-            else "equivalent-mutant candidate"
+            "genuine gap: observable difference" if differs else "equivalent-mutant candidate"
         )
         classifications[result.mutation_id] = classification
         result.classification = classification
@@ -371,8 +358,6 @@ def auto_mutation_score(spec: EcuSpec, mutants: list[MutationResult]) -> float:
     compilable = [item for item in mutants if item.compilable]
     survivors = [item for item in compilable if not item.killed_by and not item.crashed_by]
     classifications = classify_survivors(spec, survivors) if survivors else {}
-    equivalent = sum(
-        reason == "equivalent-mutant candidate" for reason in classifications.values()
-    )
+    equivalent = sum(reason == "equivalent-mutant candidate" for reason in classifications.values())
     denominator = len(compilable) - equivalent
     return sum(bool(item.killed_by) for item in compilable) / denominator if denominator else 1.0

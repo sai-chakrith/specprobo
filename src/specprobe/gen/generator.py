@@ -16,7 +16,7 @@ def _trace(spec: EcuSpec, paths: Iterable[str], statuses: frozenset[str]) -> lis
         result.append(
             TraceRef(
                 field_id=provenance.field_id if provenance else path,
-                page=provenance.page if provenance else 0,
+                page=provenance.page if provenance and provenance.page is not None else 0,
             )
         )
     return result
@@ -166,11 +166,11 @@ def generate_suite(spec: EcuSpec, statuses: frozenset[str] = APPROVED_STATUSES) 
                                 f"did-precondition-{did.did:x}-{truth}",
                                 _setup(spec, session.id, security),
                                 [request],
-                                    (
-                                        _environment(did.preconditions, truth is True)
-                                        if truth is not None
-                                        else {}
-                                    ),
+                                (
+                                    _environment(did.preconditions, truth is True)
+                                    if truth is not None
+                                    else {}
+                                ),
                                 paths,
                                 statuses,
                             )
@@ -201,7 +201,8 @@ def generate_suite(spec: EcuSpec, statuses: frozenset[str] = APPROVED_STATUSES) 
             0x27: 2,
             0x22: 3,
             0x2E: 3 + max((item.length_bytes for item in spec.dids), default=1),
-            0x31: 4 + max(
+            0x31: 4
+            + max(
                 (max(item.parameter_lengths.values(), default=0) for item in spec.routines),
                 default=0,
             ),

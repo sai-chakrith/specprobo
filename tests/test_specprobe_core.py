@@ -146,9 +146,7 @@ def _mutation_case(
 ) -> tuple[bytes | None, bytes | None]:
     spec = sample_spec()
     clean = EcuSimulator(spec)
-    mutant = mutant_simulator(
-        spec, [Mutation(mutation_id, MUTATION_DESCRIPTIONS[mutation_id])]
-    )
+    mutant = mutant_simulator(spec, [Mutation(mutation_id, MUTATION_DESCRIPTIONS[mutation_id])])
     for item in setup or []:
         clean.send(item)
         mutant.send(item)

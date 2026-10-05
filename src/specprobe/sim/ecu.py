@@ -247,7 +247,7 @@ class EcuSimulator(Transport):
             return self._negative(SID_ROUTINE_CONTROL, NRC_REQUEST_OUT_OF_RANGE)
         normalized_control = self._unsupported_control(control, routine.control_types)
         if normalized_control is None:
-                return self._negative(SID_ROUTINE_CONTROL, NRC_SUBFUNCTION_NOT_SUPPORTED)
+            return self._negative(SID_ROUTINE_CONTROL, NRC_SUBFUNCTION_NOT_SUPPORTED)
         if routine.sessions and not self._session_allowed(routine.sessions):
             return self._negative(SID_ROUTINE_CONTROL, NRC_SUBFUNCTION_NOT_SUPPORTED_IN_SESSION)
         if routine.security is not None and self.state.security_level < routine.security:

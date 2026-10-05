@@ -20,9 +20,7 @@ def run_mutations(spec: EcuSpec, suite: list[TestCase]) -> Report:
     baseline_results = run_suite(suite, EcuSimulator(spec))
     mutation_results: list[MutationResult] = []
     for mutation_id in MutationId:
-        mutant = mutant_simulator(
-            spec, [Mutation(mutation_id, MUTATION_DESCRIPTIONS[mutation_id])]
-        )
+        mutant = mutant_simulator(spec, [Mutation(mutation_id, MUTATION_DESCRIPTIONS[mutation_id])])
         results = run_suite(suite, mutant)
         mutation_results.append(
             MutationResult(
