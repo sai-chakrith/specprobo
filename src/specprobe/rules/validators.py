@@ -1,5 +1,5 @@
-from .uds_constants import NRC_INCORRECT_LENGTH, NRC_SUBFUNCTION_NOT_SUPPORTED
 from ..domain.schema import Service
+from .uds_constants import NRC_INCORRECT_LENGTH, NRC_SUBFUNCTION_NOT_SUPPORTED
 
 
 def validate_request(service: Service, request: bytes) -> set[int]:

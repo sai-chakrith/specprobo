@@ -11,4 +11,4 @@ demo:
 	python -m specprobe.demo
 
 eval:
-	python -m specprobe.demo
+	python -m eval.mutation_eval

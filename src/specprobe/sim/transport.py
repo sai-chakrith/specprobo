@@ -4,10 +4,15 @@ from typing import Protocol
 class Transport(Protocol):
     def send(self, request: bytes) -> bytes | None: ...
 
+    def set_environment(self, environment: dict[str, object]) -> None: ...
+
 
 class InMemoryTransport:
-    def __init__(self, ecu: object) -> None:
+    def __init__(self, ecu: Transport) -> None:
         self.ecu = ecu
 
     def send(self, request: bytes) -> bytes | None:
-        return self.ecu.handle(request)  # type: ignore[attr-defined]
+        return self.ecu.send(request)
+
+    def set_environment(self, environment: dict[str, object]) -> None:
+        self.ecu.set_environment(environment)

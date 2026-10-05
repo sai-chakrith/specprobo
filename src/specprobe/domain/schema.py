@@ -2,7 +2,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from .provenance import Field as ProvenanceField
+from .provenance import Provenance
 
 
 class Precondition(BaseModel):
@@ -26,16 +26,16 @@ class SecurityLevel(BaseModel):
 class Subfunction(BaseModel):
     value: int = Field(ge=0, le=0xFF)
     name: str
-    allowed_sessions: list[int] = []
+    allowed_sessions: list[int] = Field(default_factory=list)
     required_security_level: int | None = None
 
 
 class Service(BaseModel):
     sid: int = Field(ge=0, le=0xFF)
     name: str
-    allowed_sessions: list[int] = []
+    allowed_sessions: list[int] = Field(default_factory=list)
     required_security_level: int | None = None
-    subfunctions: list[Subfunction] = []
+    subfunctions: list[Subfunction] = Field(default_factory=list)
     suppress_positive_response_supported: bool = False
 
 
@@ -44,21 +44,21 @@ class DataIdentifier(BaseModel):
     name: str
     length_bytes: int = Field(gt=0)
     encoding: str
-    read_sessions: list[int] = []
-    write_sessions: list[int] = []
+    read_sessions: list[int] = Field(default_factory=list)
+    write_sessions: list[int] = Field(default_factory=list)
     read_security: int | None = None
     write_security: int | None = None
-    preconditions: list[Precondition] = []
+    preconditions: list[Precondition] = Field(default_factory=list)
 
 
 class Routine(BaseModel):
     rid: int = Field(ge=0, le=0xFFFF)
     name: str
-    control_types: list[int] = []
-    sessions: list[int] = []
+    control_types: list[int] = Field(default_factory=list)
+    sessions: list[int] = Field(default_factory=list)
     security: int | None = None
-    parameter_lengths: dict[int, int] = {}
-    preconditions: list[Precondition] = []
+    parameter_lengths: dict[int, int] = Field(default_factory=dict)
+    preconditions: list[Precondition] = Field(default_factory=list)
 
 
 class Timing(BaseModel):
@@ -79,12 +79,20 @@ class EcuSpec(BaseModel):
     routines: list[Routine]
     timing: Timing
     nrc_priority: list[int]
+    field_registry: dict[str, Provenance] = Field(default_factory=dict)
 
     def service(self, sid: int) -> Service | None:
         return next((item for item in self.services if item.sid == sid), None)
 
     def did(self, value: int) -> DataIdentifier | None:
         return next((item for item in self.dids if item.did == value), None)
+
+    def routine(self, value: int) -> Routine | None:
+        return next((item for item in self.routines if item.rid == value), None)
+
+    def field_is_approved(self, path: str) -> bool:
+        provenance = self.field_registry.get(path)
+        return provenance is None or provenance.status in {"approved", "edited"}
 
 
 def export_json_schema() -> dict[str, object]:
