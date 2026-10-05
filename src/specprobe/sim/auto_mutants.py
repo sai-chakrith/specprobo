@@ -32,6 +32,17 @@ class AutoMutant:
 
 _LAST_MUTANTS: dict[str, AutoMutant] = {}
 _NRC_VALUES = frozenset({0x11, 0x12, 0x13, 0x22, 0x24, 0x31, 0x33, 0x35, 0x7E, 0x7F})
+_EXCLUDED_FUNCTIONS = frozenset(
+    {
+        "__init__",
+        "send",
+        "set_environment",
+        "_negative",
+        "_conditions_hold",
+        "_seed",
+        "_key",
+    }
+)
 
 
 def _replacement_code(replacement: Any) -> str:
@@ -90,6 +101,21 @@ def _mutate_tree(
     return mutated
 
 
+def excluded_mutation_lines(tree: ast.Module) -> list[int]:
+    lines: set[int] = set()
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and node.name in _EXCLUDED_FUNCTIONS
+        ):
+            end = max(
+                (getattr(child, "end_lineno", node.lineno) for child in ast.walk(node)),
+                default=node.lineno,
+            )
+            lines.update(range(node.lineno, end + 1))
+    return sorted(lines)
+
+
 def _compile(tree: ast.Module, filename: str, name: str) -> type[EcuSimulator]:
     class_node = next(
         node
@@ -107,7 +133,10 @@ def _compile(tree: ast.Module, filename: str, name: str) -> type[EcuSimulator]:
 
 def _candidate_specs(tree: ast.Module, spec: EcuSpec) -> list[tuple[str, ast.AST, str, Any]]:
     candidates: list[tuple[str, ast.AST, str, Any]] = []
+    excluded_lines = set(excluded_mutation_lines(tree))
     for node in ast.walk(tree):
+        if getattr(node, "lineno", -1) in excluded_lines:
+            continue
         if isinstance(node, ast.Compare) and len(node.ops) == 1:
             replacements: dict[type[ast.cmpop], ast.cmpop] = {
                 ast.Eq: ast.NotEq(),
@@ -169,6 +198,8 @@ def discover_auto_mutants(
 ) -> list[AutoMutant]:
     path = Path(source_path) if source_path else Path(__file__).with_name("ecu.py")
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    excluded = excluded_mutation_lines(tree)
+    print(f"excluded mechanical mutation lines: {excluded}")
     effective_spec = spec or EcuSpec.model_construct(nrc_priority=list(_NRC_VALUES))
     mutants: list[AutoMutant] = []
     for index, (operator, node, change, replacement) in enumerate(
@@ -239,22 +270,25 @@ def run_auto_mutants(spec: EcuSpec, suite: list[TestCase]) -> list[MutationResul
 def _requests(spec: EcuSpec) -> list[bytes]:
     requests = [
         b"",
+        b"\x00",
         b"\x99",
-        b"\x22",
-        b"\x2e\x10\x00",
-        b"\x27\x02\x00\x00",
-        b"\x31\x01\x20\x00",
+        b"\xff",
     ]
+    for service in spec.services:
+        requests.extend(bytes((service.sid,)) + bytes(length) for length in range(4))
+        if service.subfunctions:
+            requests.extend(bytes((service.sid, value)) for value in range(256))
     requests.extend(bytes((0x10, session.id)) for session in spec.sessions)
+    requests.extend(bytes((0x10, session.id, 0)) for session in spec.sessions)
     requests.extend(bytes((0x22, did.did >> 8, did.did & 0xFF)) for did in spec.dids)
     for did in spec.dids:
-        requests.append(
-            bytes((0x2E, did.did >> 8, did.did & 0xFF)) + bytes(did.length_bytes)
-        )
+        prefix = bytes((0x2E, did.did >> 8, did.did & 0xFF))
+        requests.extend(prefix + bytes(length) for length in range(did.length_bytes + 3))
     for routine in spec.routines:
         for control in routine.control_types:
             request = bytes((0x31, control, routine.rid >> 8, routine.rid & 0xFF))
-            requests.append(request + bytes(routine.parameter_lengths.get(control, 0)))
+            length = routine.parameter_lengths.get(control, 0)
+            requests.extend(request + bytes(size) for size in range(length + 3))
     requests.extend((b"\x27\x01", b"\x27\x02\xff\x5b", b"\x3e\x00", b"\x3e\x80", b"\x3e\x01"))
     return requests
 
@@ -262,19 +296,38 @@ def _requests(spec: EcuSpec) -> list[bytes]:
 def _sequences(spec: EcuSpec, count: int) -> list[list[tuple[dict[str, object], bytes]]]:
     rng = random.Random(20261005)
     requests = _requests(spec)
-    signals = {
+    signals: dict[str, object] = {
         condition.signal or "signal": condition.value
         for did in spec.dids
         for condition in did.preconditions
         if condition.kind == "signal"
     }
-    return [
+    templates: list[list[tuple[dict[str, object], bytes]]] = []
+    for session in spec.sessions:
+        templates.append([({}, bytes((0x10, session.id)))])
+    max_level = max((item.level for item in spec.security_levels), default=0)
+    if max_level > 0:
+        for session in spec.sessions:
+            level = max_level
+            seed = bytes((0x27, level * 2 - 1))
+            key = bytes((0x27, level * 2, 0xFF, 0x5B))
+            templates.append([({}, bytes((0x10, session.id))), ({}, seed), ({}, key)])
+    signal_values = [dict(signals), {}]
+    for environment in signal_values:
+        templates.append(
+            [
+                (environment, request)
+                for request in requests[: min(8, len(requests))]
+            ]
+        )
+    random_sequences = [
         [
             (dict(signals) if rng.randrange(3) else {}, rng.choice(requests))
             for _ in range(rng.randint(1, 8))
         ]
-        for _ in range(count)
+        for _ in range(max(0, count - len(templates)))
     ]
+    return (templates + random_sequences)[:count]
 
 
 def classify_survivors(
@@ -316,7 +369,7 @@ def classify_survivors(
 
 def auto_mutation_score(spec: EcuSpec, mutants: list[MutationResult]) -> float:
     compilable = [item for item in mutants if item.compilable]
-    survivors = [item for item in compilable if not item.killed_by]
+    survivors = [item for item in compilable if not item.killed_by and not item.crashed_by]
     classifications = classify_survivors(spec, survivors) if survivors else {}
     equivalent = sum(
         reason == "equivalent-mutant candidate" for reason in classifications.values()

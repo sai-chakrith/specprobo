@@ -22,7 +22,7 @@ def main() -> None:
     for name, suite in (("baseline", build_baseline_suite()), ("generated", generated)):
         auto = run_auto_mutants(spec, suite)
         compilable = [item for item in auto if item.compilable]
-        survivors = [item for item in compilable if not item.killed_by]
+        survivors = [item for item in compilable if not item.killed_by and not item.crashed_by]
         reasons = classify_survivors(spec, survivors)
         equivalent = sum(
             reasons.get(item.mutation_id) == "equivalent-mutant candidate" for item in survivors

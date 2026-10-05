@@ -1,8 +1,6 @@
-from collections.abc import Iterable
 from dataclasses import dataclass
 
 from ..domain.schema import EcuSpec, Precondition
-from .mutations import Mutation, MutationId, mutation_config
 from .transport import Transport
 
 SID_SESSION_CONTROL = 0x10
@@ -41,14 +39,13 @@ def _key(seed: bytes) -> bytes:
 
 
 class EcuSimulator(Transport):
-    """Independent table-driven ECU implementation with constructor-configured mutants."""
+    """Independent table-driven ECU implementation."""
 
-    def __init__(self, spec: EcuSpec, mutations: Iterable[Mutation] = ()) -> None:
+    def __init__(self, spec: EcuSpec) -> None:
         self.spec = spec
         self.state = SimulatorState(session=spec.sessions[0].id)
         self.environment: dict[str, object] = {}
         self.did_store = {did.did: bytes(did.length_bytes) for did in spec.dids}
-        self.mutations = mutation_config(list(mutations))
 
     def send(self, request: bytes) -> bytes | None:
         return self.handle(request)
@@ -83,14 +80,34 @@ class EcuSimulator(Transport):
         return bytes((0x7F, sid, nrc))
 
     def _finish(self, sid: int, response: bytes | None) -> bytes | None:
-        if (
-            response is not None
-            and MutationId.WRONG_NRC in self.mutations
-            and response[:1] == b"\x7f"
-        ):
-            nrc = response[2] if response[2] != 0x31 else 0x22
-            return response[:2] + bytes((nrc,))
         return response
+
+    def _session_allowed(self, allowed_sessions: list[int]) -> bool:
+        return not allowed_sessions or self.state.session in allowed_sessions
+
+    def _security_allowed(self, required_security: int | None) -> bool:
+        return required_security is None or self.state.security_level >= required_security
+
+    def _unsupported_subfunction_allowed(self) -> bool:
+        return False
+
+    def _choose_nrc(self, candidates: list[int]) -> int:
+        return candidates[0]
+
+    def _security_after_session_change(self) -> int:
+        return 0
+
+    def _write_security_denied(self, required_security: int | None) -> bool:
+        return not self._security_allowed(required_security)
+
+    def _allowed_write_lengths(self, length: int) -> set[int]:
+        return {length}
+
+    def _preconditions_hold(self, conditions: list[Precondition]) -> bool:
+        return self._conditions_hold(conditions)
+
+    def _unsupported_control(self, control: int, supported: list[int]) -> int | None:
+        return None if control not in supported else control
 
     def _service_allowed(self, sid: int, request: bytes) -> bytes | None:
         service = self.spec.service(sid)
@@ -100,7 +117,7 @@ class EcuSimulator(Transport):
         if (
             service.allowed_sessions
             and self.state.session not in service.allowed_sessions
-            and MutationId.MISSING_SESSION_CHECK not in self.mutations
+            and not self._session_allowed(service.allowed_sessions)
         ):
             candidates.append(NRC_SERVICE_NOT_SUPPORTED_IN_SESSION)
         if (
@@ -112,12 +129,12 @@ class EcuSimulator(Transport):
             subfunction = request[1] & 0x7F
             entry = next((item for item in service.subfunctions if item.value == subfunction), None)
             if entry is None:
-                if MutationId.SUBFUNCTION_ACCEPTED_WHEN_UNSUPPORTED not in self.mutations:
+                if not self._unsupported_subfunction_allowed():
                     candidates.append(NRC_SUBFUNCTION_NOT_SUPPORTED)
             elif (
                 entry.allowed_sessions
                 and self.state.session not in entry.allowed_sessions
-                and MutationId.MISSING_SESSION_CHECK not in self.mutations
+                and not self._session_allowed(entry.allowed_sessions)
             ):
                 candidates.append(NRC_SUBFUNCTION_NOT_SUPPORTED_IN_SESSION)
             elif (
@@ -127,9 +144,7 @@ class EcuSimulator(Transport):
                 candidates.append(NRC_SECURITY_ACCESS_DENIED)
         if not candidates:
             return None
-        if MutationId.WRONG_NRC_PRIORITY in self.mutations:
-            return self._negative(sid, min(candidates))
-        return self._negative(sid, candidates[0])
+        return self._negative(sid, self._choose_nrc(candidates))
 
     def _session(self, request: bytes) -> bytes:
         blocked = self._service_allowed(SID_SESSION_CONTROL, request)
@@ -140,11 +155,7 @@ class EcuSimulator(Transport):
         target = request[1]
         if not any(item.id == target for item in self.spec.sessions):
             return self._negative(SID_SESSION_CONTROL, NRC_REQUEST_OUT_OF_RANGE)
-        security = (
-            self.state.security_level
-            if MutationId.SECURITY_NOT_RELOCKED_ON_SESSION_CHANGE in self.mutations
-            else 0
-        )
+        security = self._security_after_session_change()
         self.state = SimulatorState(target, security)
         return bytes((0x50, target))
 
@@ -189,7 +200,7 @@ class EcuSimulator(Transport):
         if did is None or (
             did.read_sessions
             and self.state.session not in did.read_sessions
-            and MutationId.MISSING_SESSION_CHECK not in self.mutations
+            and not self._session_allowed(did.read_sessions)
         ):
             return self._negative(SID_READ_DATA, NRC_REQUEST_OUT_OF_RANGE)
         if did.read_security is not None and self.state.security_level < did.read_security:
@@ -206,26 +217,20 @@ class EcuSimulator(Transport):
         if did is None or (
             did.write_sessions
             and self.state.session not in did.write_sessions
-            and MutationId.MISSING_SESSION_CHECK not in self.mutations
+            and not self._session_allowed(did.write_sessions)
         ):
             return self._negative(SID_WRITE_DATA, NRC_REQUEST_OUT_OF_RANGE)
         if (
             did.write_security is not None
             and self.state.security_level < did.write_security
-            and MutationId.MISSING_SECURITY_CHECK_ON_WRITE not in self.mutations
+            and self._write_security_denied(did.write_security)
         ):
             return self._negative(SID_WRITE_DATA, NRC_SECURITY_ACCESS_DENIED)
         payload = request[3:]
-        allowed_lengths = (
-            {did.length_bytes, did.length_bytes + 1}
-            if MutationId.DID_LENGTH_OFF_BY_ONE in self.mutations
-            else {did.length_bytes}
-        )
+        allowed_lengths = self._allowed_write_lengths(did.length_bytes)
         if len(payload) not in allowed_lengths:
             return self._negative(SID_WRITE_DATA, NRC_INCORRECT_LENGTH)
-        if MutationId.PRECONDITION_IGNORED not in self.mutations and not self._conditions_hold(
-            did.preconditions
-        ):
+        if not self._preconditions_hold(did.preconditions):
             return self._negative(SID_WRITE_DATA, NRC_CONDITIONS_NOT_CORRECT)
         self.did_store[did.did] = payload[: did.length_bytes]
         return b"\x6e" + request[1:3]
@@ -240,24 +245,16 @@ class EcuSimulator(Transport):
         routine = self.spec.routine(int.from_bytes(request[2:4], "big"))
         if routine is None:
             return self._negative(SID_ROUTINE_CONTROL, NRC_REQUEST_OUT_OF_RANGE)
-        if control not in routine.control_types:
-            if MutationId.SUBFUNCTION_ACCEPTED_WHEN_UNSUPPORTED in self.mutations:
-                control = routine.control_types[0] if routine.control_types else control
-            else:
+        normalized_control = self._unsupported_control(control, routine.control_types)
+        if normalized_control is None:
                 return self._negative(SID_ROUTINE_CONTROL, NRC_SUBFUNCTION_NOT_SUPPORTED)
-        if (
-            routine.sessions
-            and self.state.session not in routine.sessions
-            and MutationId.MISSING_SESSION_CHECK not in self.mutations
-        ):
+        if routine.sessions and not self._session_allowed(routine.sessions):
             return self._negative(SID_ROUTINE_CONTROL, NRC_SUBFUNCTION_NOT_SUPPORTED_IN_SESSION)
         if routine.security is not None and self.state.security_level < routine.security:
             return self._negative(SID_ROUTINE_CONTROL, NRC_SECURITY_ACCESS_DENIED)
         if len(request[4:]) != routine.parameter_lengths.get(control, 0):
             return self._negative(SID_ROUTINE_CONTROL, NRC_INCORRECT_LENGTH)
-        if MutationId.PRECONDITION_IGNORED not in self.mutations and not self._conditions_hold(
-            routine.preconditions
-        ):
+        if not self._preconditions_hold(routine.preconditions):
             return self._negative(SID_ROUTINE_CONTROL, NRC_CONDITIONS_NOT_CORRECT)
         return bytes((0x71, request[1])) + request[2:4]
 
@@ -269,7 +266,7 @@ class EcuSimulator(Transport):
             return self._negative(SID_TESTER_PRESENT, NRC_INCORRECT_LENGTH)
         subfunction = request[1] if len(request) == 2 else 0
         if subfunction & 0x7F:
-            if MutationId.SUBFUNCTION_ACCEPTED_WHEN_UNSUPPORTED in self.mutations:
+            if self._unsupported_subfunction_allowed():
                 return bytes((0x7E, subfunction & 0x7F))
             return self._negative(SID_TESTER_PRESENT, NRC_SUBFUNCTION_NOT_SUPPORTED)
         if subfunction & 0x80:

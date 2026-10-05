@@ -8,7 +8,7 @@ from .runner.executor import run_suite
 from .runner.report import MutationResult, Report
 from .sim.auto_mutants import auto_mutation_score, classify_survivors, run_auto_mutants
 from .sim.ecu import EcuSimulator
-from .sim.mutations import MUTATION_DESCRIPTIONS, Mutation, MutationId
+from .sim.mutations import MUTATION_DESCRIPTIONS, Mutation, MutationId, mutant_simulator
 
 
 def build_spec() -> EcuSpec:
@@ -20,7 +20,9 @@ def run_mutations(spec: EcuSpec, suite: list[TestCase]) -> Report:
     baseline_results = run_suite(suite, EcuSimulator(spec))
     mutation_results: list[MutationResult] = []
     for mutation_id in MutationId:
-        mutant = EcuSimulator(spec, [Mutation(mutation_id, MUTATION_DESCRIPTIONS[mutation_id])])
+        mutant = mutant_simulator(
+            spec, [Mutation(mutation_id, MUTATION_DESCRIPTIONS[mutation_id])]
+        )
         results = run_suite(suite, mutant)
         mutation_results.append(
             MutationResult(

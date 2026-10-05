@@ -17,7 +17,7 @@ from specprobe.gen.generator import generate_suite
 from specprobe.rules.oracle import State, expected_response, step
 from specprobe.runner.executor import run_suite
 from specprobe.sim.ecu import EcuSimulator
-from specprobe.sim.mutations import MUTATION_DESCRIPTIONS, Mutation, MutationId
+from specprobe.sim.mutations import MUTATION_DESCRIPTIONS, Mutation, MutationId, mutant_simulator
 from specprobe.sim.transport import InMemoryTransport
 
 
@@ -146,7 +146,9 @@ def _mutation_case(
 ) -> tuple[bytes | None, bytes | None]:
     spec = sample_spec()
     clean = EcuSimulator(spec)
-    mutant = EcuSimulator(spec, [Mutation(mutation_id, MUTATION_DESCRIPTIONS[mutation_id])])
+    mutant = mutant_simulator(
+        spec, [Mutation(mutation_id, MUTATION_DESCRIPTIONS[mutation_id])]
+    )
     for item in setup or []:
         clean.send(item)
         mutant.send(item)
