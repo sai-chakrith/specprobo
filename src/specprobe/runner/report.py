@@ -16,6 +16,7 @@ class MutationResult:
     mutated_code: str = ""
     compilable: bool = True
     classification: str = ""
+    crashed_by: list[str] = field(default_factory=list)
 
 
 @dataclass

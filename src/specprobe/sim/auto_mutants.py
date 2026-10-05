@@ -209,6 +209,7 @@ def run_auto_mutants(spec: EcuSpec, suite: list[TestCase]) -> list[MutationResul
     results: list[MutationResult] = []
     for mutant in discovered:
         killed_by: list[str] = []
+        crashed_by: list[str] = []
         if mutant.simulator_type is not None:
             simulator = mutant.simulator_type(spec)
             for case in suite:
@@ -217,7 +218,7 @@ def run_auto_mutants(spec: EcuSpec, suite: list[TestCase]) -> list[MutationResul
                     if not outcome[0].passed:
                         killed_by.append(case.id)
                 except Exception:
-                    killed_by.append(case.id)
+                    crashed_by.append(case.id)
         results.append(
             MutationResult(
                 mutant.id,
@@ -229,6 +230,7 @@ def run_auto_mutants(spec: EcuSpec, suite: list[TestCase]) -> list[MutationResul
                 mutant.original_code,
                 mutant.mutated_code,
                 mutant.simulator_type is not None,
+                crashed_by=crashed_by,
             )
         )
     return results

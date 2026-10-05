@@ -1,10 +1,9 @@
 import argparse
 from time import perf_counter
 
-from specprobe.demo import build_spec, run_mutations
+from specprobe.demo import build_spec
 from specprobe.gen.generator import generate_suite
 from specprobe.sim.auto_mutants import (
-    auto_mutation_score,
     classify_survivors,
     run_auto_mutants,
 )
@@ -19,33 +18,68 @@ def main() -> None:
     started = perf_counter()
     generated = generate_suite(spec)
     generation_time = perf_counter() - started
-    rows: list[tuple[str, int, float, float, str]] = []
+    rows: list[tuple[str, int, int, int, int, int, int, int, float, float]] = []
     for name, suite in (("baseline", build_baseline_suite()), ("generated", generated)):
-        named = run_mutations(spec, suite)
         auto = run_auto_mutants(spec, suite)
         compilable = [item for item in auto if item.compilable]
         survivors = [item for item in compilable if not item.killed_by]
         reasons = classify_survivors(spec, survivors)
-        survivor_text = ", ".join(
-            f"{item.mutation_id} ({reasons[item.mutation_id]})" for item in survivors
-        ) or "none"
+        equivalent = sum(
+            reasons.get(item.mutation_id) == "equivalent-mutant candidate" for item in survivors
+        )
+        genuine = len(survivors) - equivalent
+        killed = sum(bool(item.killed_by) for item in compilable)
+        crashes = sum(bool(item.crashed_by) for item in compilable)
+        raw_score = killed / len(compilable) if compilable else 0.0
+        adjusted_denominator = len(compilable) - equivalent
+        adjusted_score = killed / adjusted_denominator if adjusted_denominator else 1.0
         print(
-            f"{name} mechanical mutants: total={len(auto)}, "
-            f"killed={len(compilable) - len(survivors)}, "
-            f"survived={len(survivors)}, uncompilable={len(auto) - len(compilable)}"
+            f"{name} mechanical mutants: total={len(auto)}, compilable={len(compilable)}, "
+            f"output mismatch={killed}, crash={crashes}, survived={len(survivors)}, "
+            f"equivalent={equivalent}, genuine gap={genuine}, "
+            f"raw score={raw_score:.1%}, adjusted score={adjusted_score:.1%}"
         )
         for item in survivors:
-            print(
-                f"survivor {item.mutation_id}: operator={item.operator}, line={item.source_line}, "
-                f"diff={item.original_code} -> {item.mutated_code}, "
-                f"classification={item.classification}"
-            )
+            if reasons[item.mutation_id].startswith("genuine gap"):
+                print(
+                    f"genuine-gap survivor {item.mutation_id}: operator={item.operator}, "
+                    f"line={item.source_line}, diff={item.original_code} -> {item.mutated_code}"
+                )
         rows.append(
-            (name, len(suite), named.mutation_score, auto_mutation_score(spec, auto), survivor_text)
+            (
+                name,
+                len(suite),
+                len(auto),
+                len(compilable),
+                killed,
+                crashes,
+                len(survivors),
+                equivalent,
+                raw_score,
+                adjusted_score,
+            )
         )
-    print("suite | size | named-mutant score | mechanical-mutant score | survivors")
-    for name, size, named_score, auto_score, survivors in rows:
-        print(f"{name} | {size} | {named_score:.1%} | {auto_score:.1%} | {survivors}")
+    print(
+        "suite | size | total mutants | compilable | output mismatch | crash | survived | "
+        "equivalent | genuine gap | raw score | adjusted score"
+    )
+    for (
+        name,
+        size,
+        total,
+        compilable_count,
+        killed,
+        crashes,
+        survived,
+        equivalent,
+        raw_score,
+        adjusted_score,
+    ) in rows:
+        print(
+            f"{name} | {size} | {total} | {compilable_count} | {killed} | {crashes} | "
+            f"{survived} | {equivalent} | {survived - equivalent} | {raw_score:.1%} | "
+            f"{adjusted_score:.1%}"
+        )
     print(f"generated wall-clock time: {generation_time:.6f}s")
     author_time = (
         f"{args.author_time_minutes:.1f} minutes"
