@@ -38,6 +38,9 @@ class InMemoryVectorBackend:
         self._rows: dict[str, list[dict[str, object]]] = {}
 
     def add(self, collection: str, document_id: str, text: str, metadata: dict[str, str]) -> None:
+        self._rows[collection] = [
+            row for row in self._rows.get(collection, []) if row["id"] != document_id
+        ]
         self._rows.setdefault(collection, []).append(
             {"id": document_id, "text": text, "metadata": dict(metadata)}
         )
@@ -52,6 +55,9 @@ class ChromaCollection(Protocol):
     ) -> None: ...
 
     def get(self) -> dict[str, object]: ...
+    def upsert(
+        self, ids: list[str], documents: list[str], metadatas: list[dict[str, str]]
+    ) -> None: ...
 
 
 class ChromaClient(Protocol):
@@ -148,7 +154,7 @@ class ChromaVectorBackend:
             collection, embedding_function=self._embedding_function
         )
         safe_metadata = metadata or {"workspace": collection.split("__", 1)[0][3:]}
-        target.add(ids=[document_id], documents=[text], metadatas=[safe_metadata])
+        target.upsert(ids=[document_id], documents=[text], metadatas=[safe_metadata])
 
     def list(self, collection: str) -> list[dict[str, object]]:
         target = self._client.get_or_create_collection(

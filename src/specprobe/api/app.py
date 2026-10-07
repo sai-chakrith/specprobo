@@ -1,22 +1,26 @@
+import hashlib
+import hmac
 import json
 import os
 import re
+import secrets
 import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated, Any, Literal, cast
 from uuid import uuid4
 
-from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Header, HTTPException, Request, UploadFile
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.engine import Engine
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session
 
 from ..domain.schema import EcuSpec
 from ..gen.generator import generate_suite
+from ..grounding import conflicting_evidence, supported_answer
 from ..ingest.extractor import extract_spec_fields
 from ..ingest.llm import OllamaClient
 from ..ingest.models import TextBlock
@@ -27,7 +31,17 @@ from ..sim.auto_mutants import classify_survivors, run_auto_mutants
 from ..sim.ecu import EcuSimulator
 from ..storage.audit import AuditLog
 from ..storage.db import create_database, session_factory
-from ..storage.models import Document, Review, TestCaseRow, TestRun
+from ..storage.models import (
+    Document,
+    DocumentBlob,
+    IndexJob,
+    Membership,
+    Review,
+    TestCaseRow,
+    TestRun,
+    User,
+)
+from ..storage.recovery import recover_index
 from ..storage.repository import WorkspaceRepository, create_workspace
 from ..storage.vectorstore import (
     ChromaVectorBackend,
@@ -83,7 +97,9 @@ class BatchReviewRequest(BaseModel):
     field_ids: list[str] = Field(min_length=1, max_length=1000)
 
 
-def create_app(engine: Engine | None = None, backend: VectorBackend | None = None) -> FastAPI:
+def create_app(
+    engine: Engine | None = None, backend: VectorBackend | None = None, auth_mode: str | None = None
+) -> FastAPI:
     app = FastAPI(title="SpecProbe diagnostics assistant")
     app.state.engine = (
         engine
@@ -104,24 +120,116 @@ def create_app(engine: Engine | None = None, backend: VectorBackend | None = Non
                 os.environ.get("SPECPROBE_VECTOR_PATH", ".specprobe/chroma"), embedding
             )
     app.state.backend = backend
+    app.state.auth_mode = auth_mode or os.environ.get(
+        "SPECPROBE_AUTH_MODE", "workspace_key" if engine is not None else "individual"
+    )
+    if app.state.auth_mode not in {"individual", "workspace_key"}:
+        raise ValueError("Unknown authentication mode")
 
-    def session_dependency() -> Any:
+    def administrator(request: Request) -> None:
+        secret_file = os.environ.get("SPECPROBE_ADMIN_SECRET_FILE")
+        configured = (
+            Path(secret_file).read_text().strip()
+            if secret_file
+            else os.environ.get("SPECPROBE_ADMIN_SECRET", "")
+        )
+        supplied = request.headers.get("X-Admin-Key", "")
+        if not configured or not hmac.compare_digest(configured, supplied):
+            raise HTTPException(403, "Administrator credential required")
+
+    @app.post("/users/{user_id}")
+    def provision_user(user_id: str, request: Request) -> dict[str, str]:
+        administrator(request)
+        token = secrets.token_urlsafe(32)
+        with app.state.sessions() as session:
+            if session.get(User, user_id):
+                raise HTTPException(409, "User already exists")
+            session.add(
+                User(id=user_id, token_hash=hashlib.sha256(token.encode()).hexdigest(), active=1)
+            )
+            session.commit()
+        return {"user_id": user_id, "token": token}
+
+    @app.put("/workspaces/{workspace_id}/members/{user_id}")
+    def membership(
+        workspace_id: str,
+        user_id: str,
+        role: Literal["viewer", "editor", "reviewer", "revoked"],
+        request: Request,
+    ) -> dict[str, str]:
+        administrator(request)
+        with app.state.sessions() as session:
+            from ..storage.models import Workspace
+
+            if not session.get(User, user_id) or not session.get(Workspace, workspace_id):
+                raise HTTPException(404, "User or workspace not found")
+            session.merge(Membership(user_id=user_id, workspace_id=workspace_id, role=role))
+            AuditLog(session).append(
+                workspace_id,
+                "membership_change",
+                "administrator",
+                {"user_id": user_id, "role": role},
+            )
+            session.commit()
+        return {"role": role}
+
+    @app.post("/users/{user_id}/credential")
+    def user_credential(user_id: str, request: Request, revoke: bool = False) -> dict[str, str]:
+        administrator(request)
+        with app.state.sessions() as session:
+            user = session.get(User, user_id)
+            if user is None:
+                raise HTTPException(404, "User not found")
+            token = secrets.token_urlsafe(32)
+            user.active = 0 if revoke else 1
+            user.token_hash = hashlib.sha256(token.encode()).hexdigest()
+            session.commit()
+        return {"user_id": user_id, "token": "" if revoke else token}
+
+    def actor(session: Session, supplied: str) -> str:
+        return str(session.info.get("actor", supplied))
+
+    def session_dependency(request: Request) -> Any:
         session = app.state.sessions()
         try:
+            workspace_id = request.path_params.get("workspace_id")
+            if app.state.auth_mode == "individual" and workspace_id:
+                credential = request.headers.get("Authorization", "")
+                if not credential.startswith("Bearer "):
+                    raise HTTPException(401, "Individual bearer token required")
+                user = session.scalar(
+                    select(User).where(
+                        User.token_hash == hashlib.sha256(credential[7:].encode()).hexdigest(),
+                        User.active == 1,
+                    )
+                )
+                member = session.get(Membership, (user.id, workspace_id)) if user else None
+                levels = {"viewer": 1, "editor": 2, "reviewer": 3}
+                required = (
+                    1 if request.method == "GET" or request.url.path.endswith("/query") else 2
+                )
+                if "/review" in request.url.path:
+                    required = 3
+                if member is None or levels.get(member.role, 0) < required:
+                    raise HTTPException(403, "Workspace role does not permit this action")
+                session.info.update(authorized_workspace=workspace_id, actor=user.id)
             yield session
         except IntegrityError as error:
             session.rollback()
             raise HTTPException(409, "Identifier already exists") from error
+        except OperationalError as error:
+            session.rollback()
+            raise HTTPException(503, "Database unavailable; retry the transaction") from error
         finally:
             session.close()
 
     SessionDep = Annotated[Session, Depends(session_dependency)]
 
     def repository(workspace_id: str, session: Session, api_key: str | None) -> WorkspaceRepository:
-        if not api_key:
+        if not api_key and session.info.get("authorized_workspace") != workspace_id:
             raise HTTPException(401, "missing X-API-Key")
         repo = WorkspaceRepository(
-            session, ScopedVectorStore(app.state.backend, workspace_id), workspace_id, api_key
+            session, ScopedVectorStore(app.state.backend, workspace_id), workspace_id, api_key or ""
         )
         try:
             repo._authorize()
@@ -138,6 +246,12 @@ def create_app(engine: Engine | None = None, backend: VectorBackend | None = Non
         if row is None:
             raise HTTPException(404, "Document not found")
         return row
+
+    def source_usable(row: Document) -> bool:
+        return (
+            not row.name.lower().endswith(".json")
+            or json.loads(row.content).get("source_revision") == 2
+        )
 
     def suite(repo: WorkspaceRepository, suite_id: str) -> TestCaseRow:
         row = repo.session.scalar(
@@ -163,12 +277,45 @@ def create_app(engine: Engine | None = None, backend: VectorBackend | None = Non
             and (digest is None or entries[-1].payload.get("hash") == digest)
         )
 
+    @app.post("/workspaces/{workspace_id}/documents/{document_id}/recover")
+    def recover_document(
+        workspace_id: str,
+        document_id: str,
+        session: SessionDep,
+        x_api_key: str | None = Header(default=None),
+    ) -> dict[str, Any]:
+        repo = repository(workspace_id, session, x_api_key)
+        job = recover_index(session, document(repo, document_id), repo.vectors)
+        return {"status": job.status, "attempts": job.attempts, "error_type": job.error}
+
+    @app.get("/ready")
+    def ready() -> dict[str, Any]:
+        with app.state.sessions() as session:
+            incomplete = list(
+                session.scalars(select(IndexJob).where(IndexJob.status != "complete"))
+            )
+            chain = AuditLog(session).verify_chain()
+        if not chain:
+            raise HTTPException(503, "Audit integrity check failed")
+        return {
+            "database": "ok",
+            "audit_chain": "valid",
+            "incomplete_indexes": len(incomplete),
+            "auth_mode": app.state.auth_mode,
+            "execution": "simulator",
+            "model_revision": 2,
+        }
+
     @app.get("/health")
     def health() -> dict[str, str]:
         return {"status": "ok", "execution": "simulator"}
 
     @app.post("/workspaces")
-    def create_workspace_route(request: WorkspaceRequest, session: SessionDep) -> dict[str, str]:
+    def create_workspace_route(
+        request: WorkspaceRequest, http_request: Request, session: SessionDep
+    ) -> dict[str, str]:
+        if app.state.auth_mode == "individual":
+            administrator(http_request)
         create_workspace(session, request.workspace_id, request.api_key)
         return {"workspace_id": request.workspace_id}
 
@@ -182,7 +329,9 @@ def create_app(engine: Engine | None = None, backend: VectorBackend | None = Non
                 "id": row.id,
                 "name": row.name,
                 "kind": json.loads(row.content)["kind"],
+                "requires_reingest": not source_usable(row),
                 "approved": is_approved(repo, "document_review", row.id),
+                "index_status": job.status if (job := session.get(IndexJob, row.id)) else "legacy",
             }
             for row in repo.list_documents()
         ]
@@ -208,9 +357,21 @@ def create_app(engine: Engine | None = None, backend: VectorBackend | None = Non
             if suffix == ".json":
                 spec = EcuSpec.model_validate_json(raw)
                 validate_spec(spec)
+                source_data = json.loads(raw)
+
+                def source_contains(path: str) -> bool:
+                    match = re.fullmatch(r"(\w+)\[(\d+)\]\.(\w+)", path)
+                    if match:
+                        root, index, key = match.groups()
+                        return key in source_data[root][int(index)]
+                    if path.startswith("timing."):
+                        return path.split(".", 1)[1] in source_data.get("timing", {})
+                    return path in source_data
+
                 blocks = [
-                    TextBlock(document_id, f"{path}: {json.dumps(value)}", row=i + 1)
-                    for i, (path, value) in enumerate(spec_fields(spec))
+                    TextBlock(document_id, f"{path}: {json.dumps(value)}")
+                    for path, value in spec_fields(spec)
+                    if source_contains(path)
                 ]
                 proposals = [
                     {
@@ -219,8 +380,10 @@ def create_app(engine: Engine | None = None, backend: VectorBackend | None = Non
                         "value": {
                             "value": value,
                             "provenance": {
-                                "row": i + 1,
-                                "source_snippet": blocks[i].text,
+                                "row": None,
+                                "origin": "normalized_json",
+                                "defaulted": not source_contains(path),
+                                "source_snippet": f"{path}: {json.dumps(value)}",
                                 "confidence": 1.0,
                             },
                         },
@@ -268,6 +431,7 @@ def create_app(engine: Engine | None = None, backend: VectorBackend | None = Non
         if not blocks:
             raise HTTPException(422, "No text extracted; scanned PDFs require OCR before upload")
         envelope = {
+            "source_revision": 2,
             "kind": kind,
             "blocks": [
                 {"text": b.text, "page": b.page, "sheet": b.sheet, "row": b.row} for b in blocks
@@ -283,22 +447,13 @@ def create_app(engine: Engine | None = None, backend: VectorBackend | None = Non
             )
         )
         session.flush()
-        stored = repo.propose_fields(proposals, "upload")
-        for index, block in enumerate(blocks):
-            repo.vectors.add(
-                kind,
-                f"{document_id}:{index}",
-                block.text,
-                {
-                    "document_id": document_id,
-                    "name": file.filename or "document",
-                    "page": str(block.page or ""),
-                    "sheet": block.sheet or "",
-                    "row": str(block.row or ""),
-                },
-            )
+        session.add(IndexJob(document_id=document_id, status="pending", attempts=0, error=""))
+        session.add(DocumentBlob(document_id=document_id, content=raw))
+        stored = repo.propose_fields(proposals, actor(session, "upload"))
+        job = recover_index(session, document(repo, document_id), repo.vectors)
         return {
             "document_id": document_id,
+            "index_status": job.status,
             "field_ids": [field.id for field in stored],
             "review_required": True,
         }
@@ -313,10 +468,13 @@ def create_app(engine: Engine | None = None, backend: VectorBackend | None = Non
     ) -> dict[str, bool]:
         repo = repository(workspace_id, session, x_api_key)
         document(repo, document_id)
+        job = session.get(IndexJob, document_id)
+        if request.approved and job is not None and job.status != "complete":
+            raise HTTPException(409, "Document indexing is incomplete; recover before approval")
         AuditLog(session).append(
             workspace_id,
             "document_review",
-            request.reviewer,
+            actor(session, request.reviewer),
             {"id": document_id, "approved": request.approved},
         )
         session.commit()
@@ -355,7 +513,9 @@ def create_app(engine: Engine | None = None, backend: VectorBackend | None = Non
     ) -> dict[str, str]:
         repo = repository(workspace_id, session, x_api_key)
         try:
-            review = repo.review_field(field_id, request.decision, request.reviewer, request.value)
+            review = repo.review_field(
+                field_id, request.decision, actor(session, request.reviewer), request.value
+            )
         except (PermissionError, ValueError) as error:
             raise HTTPException(422, str(error)) from error
         return {"review_id": review.id, "decision": review.decision}
@@ -369,7 +529,11 @@ def create_app(engine: Engine | None = None, backend: VectorBackend | None = Non
         x_api_key: str | None = Header(default=None),
     ) -> dict[str, Any]:
         repo = repository(workspace_id, session, x_api_key)
-        document(repo, document_id)
+        selected_source = document(repo, document_id)
+        if not source_usable(selected_source):
+            raise HTTPException(
+                409, "Reingest the original legacy JSON and review its explicit defaults"
+            )
         if not is_approved(repo, "document_review", document_id):
             raise HTTPException(409, "Approve the source document before generation")
         approved = [f for f in repo.list_approved_fields() if f.document_id == document_id]
@@ -384,6 +548,7 @@ def create_app(engine: Engine | None = None, backend: VectorBackend | None = Non
         except (ValueError, IndexError, KeyError) as error:
             raise HTTPException(422, f"Incomplete or unsupported specification: {error}") from error
         payload = {
+            "model_revision": 2,
             "document_id": document_id,
             "approved_field_ids": [f.id for f in approved],
             "spec": spec.model_dump(mode="json"),
@@ -391,7 +556,7 @@ def create_app(engine: Engine | None = None, backend: VectorBackend | None = Non
             "case_count": len(cases),
             "coverage": coverage(cases),
         }
-        repo.generate_suite(suite_id, payload, "engineer")
+        repo.generate_suite(suite_id, payload, actor(session, "engineer"))
         return {
             "suite_id": suite_id,
             "case_count": len(cases),
@@ -427,7 +592,7 @@ def create_app(engine: Engine | None = None, backend: VectorBackend | None = Non
         AuditLog(session).append(
             workspace_id,
             "suite_review",
-            request.reviewer,
+            actor(session, request.reviewer),
             {"id": suite_id, "approved": request.approved, "hash": snapshot_hash(payload)},
         )
         session.commit()
@@ -445,6 +610,8 @@ def create_app(engine: Engine | None = None, backend: VectorBackend | None = Non
         payload = suite(repo, suite_id).payload
         if not is_approved(repo, "suite_review", suite_id, snapshot_hash(payload)):
             raise HTTPException(409, "Approve this suite snapshot before export")
+        if payload.get("model_revision") != 2:
+            raise HTTPException(409, "Legacy protocol snapshot; regenerate and review the suite")
         if not is_approved(repo, "document_review", str(payload["document_id"])):
             raise HTTPException(409, "Source document approval has been revoked")
         body = export_python(payload) if format == "python" else json.dumps(payload, indent=2)
@@ -463,6 +630,8 @@ def create_app(engine: Engine | None = None, backend: VectorBackend | None = Non
         payload = suite(repo, suite_id).payload
         if not is_approved(repo, "suite_review", suite_id, snapshot_hash(payload)):
             raise HTTPException(409, "Approve this suite snapshot before execution")
+        if payload.get("model_revision") != 2:
+            raise HTTPException(409, "Legacy protocol snapshot; regenerate and review the suite")
         if not is_approved(repo, "document_review", str(payload["document_id"])):
             raise HTTPException(409, "Source document approval has been revoked")
         spec = EcuSpec.model_validate(payload["spec"])
@@ -480,6 +649,9 @@ def create_app(engine: Engine | None = None, backend: VectorBackend | None = Non
                     "passed": r.passed,
                     "expected": r.expected.hex() if r.expected is not None else None,
                     "actual": r.actual.hex() if r.actual is not None else None,
+                    "failure_kind": r.failure_kind,
+                    "detail": r.detail,
+                    "checks": [c.model_dump(mode="json") for c in r.checks],
                 }
                 for r in results
             ],
@@ -518,7 +690,9 @@ def create_app(engine: Engine | None = None, backend: VectorBackend | None = Non
     ) -> dict[str, Any]:
         repo = repository(workspace_id, session, x_api_key)
         approved_ids = {
-            d.id for d in repo.list_documents() if is_approved(repo, "document_review", d.id)
+            d.id
+            for d in repo.list_documents()
+            if source_usable(d) and is_approved(repo, "document_review", d.id)
         }
         hits = [
             hit
@@ -539,21 +713,32 @@ def create_app(engine: Engine | None = None, backend: VectorBackend | None = Non
         answer = "No relevant approved evidence found."
         if evidence:
             answer = "\n\n".join(f"[{e['citation']}] {e['text']}" for e in evidence)
-        if request.use_llm and evidence:
+        conflict = conflicting_evidence(evidence)
+        if conflict:
+            answer = "Contradictory approved sources; engineer resolution required."
+        if request.use_llm and evidence and not conflict:
             try:
                 answer = OllamaClient(
                     model=os.environ.get("SPECPROBE_OLLAMA_MODEL", "llama3.2")
                 ).answer(request.question, evidence)
-                citations = {int(value) for value in re.findall(r"\[(\d+)\]", answer)}
-                if not citations or not citations <= set(range(1, len(evidence) + 1)):
-                    raise RuntimeError("Local answer lacks valid evidence citations")
+                if not supported_answer(answer, evidence):
+                    answer = (
+                        "Insufficient supported evidence for the model answer; "
+                        "inspect the cited source excerpts."
+                    )
             except (OSError, RuntimeError, ValueError) as error:
                 raise HTTPException(503, f"Local inference unavailable: {error}") from error
         return {
             "answer": answer,
             "citations": evidence,
-            "mode": "local_llm" if request.use_llm and evidence else "evidence_only",
+            "mode": "evidence_conflict"
+            if conflict
+            else "local_llm"
+            if request.use_llm and evidence
+            else "evidence_only",
             "review_required": True,
+            "conflict": conflict,
+            "grounding_policy": "contiguous extractive support; semantic entailment not validated",
             "limitation": "Retrieval scores are similarity scores, not calibrated confidence.",
         }
 
@@ -568,8 +753,15 @@ def create_app(engine: Engine | None = None, backend: VectorBackend | None = Non
         allowed = {f.id for f in repo.list_fields()}
         if not set(request.field_ids) <= allowed:
             raise HTTPException(404, "Field not found in this workspace")
-        for field_id in dict.fromkeys(request.field_ids):
-            repo.review_field(field_id, "approved", request.reviewer)
+        try:
+            for field_id in dict.fromkeys(request.field_ids):
+                repo.review_field(
+                    field_id, "approved", actor(session, request.reviewer), commit=False
+                )
+            session.commit()
+        except (ValueError, PermissionError) as error:
+            session.rollback()
+            raise HTTPException(422, "Batch approval failed; no decisions committed") from error
         return {"reviewed": len(set(request.field_ids))}
 
     @app.post("/workspaces/{workspace_id}/suites/{suite_id}/validate-message")

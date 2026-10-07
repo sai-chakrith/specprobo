@@ -1,0 +1,16 @@
+{
+  "health": {
+    "status": "ok",
+    "execution": "simulator"
+  },
+  "readiness": {
+    "database": "ok",
+    "audit_chain": "valid",
+    "incomplete_indexes": 0,
+    "auth_mode": "individual",
+    "execution": "simulator",
+    "model_revision": 2
+  },
+  "unauthorized_workspace_creation_status": 403,
+  "execution": "isolated live HTTP API; simulator default; no hardware or models used"
+}

@@ -31,5 +31,5 @@
     {"rid": 12290, "name": "B-Routine-2", "control_types": [1, 2], "sessions": [4], "security": 2, "parameter_lengths": {"1": 2, "2": 0}, "preconditions": [{"kind": "signal", "signal": "battery_ok", "op": "==", "value": true, "source_text": "battery ok"}, {"kind": "signal", "signal": "doors_closed", "op": "==", "value": true, "source_text": "doors closed"}]}
   ],
   "timing": {"p2_ms": 75, "p2_star_ms": 7000, "s3_ms": 6000},
-  "nrc_priority": [19, 18, 17, 126, 127, 33, 53, 36, 49, 34]
+  "nrc_priority": [19, 18, 17, 126, 127, 51, 53, 36, 49, 34]
 }

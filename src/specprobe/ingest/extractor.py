@@ -1,13 +1,15 @@
 import ast
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 from jsonschema import validate  # type: ignore[import-untyped]
 
-from ..domain.provenance import Provenance
+from ..domain.provenance import Provenance, SourceReference
 from ..domain.schema import EcuSpec, Precondition
+from .layouts import normalize
+from .layouts import section as layout_section
 from .llm import FakeLLM, LLMClient
 from .models import TableRow, TextBlock
 
@@ -25,6 +27,7 @@ def _provenance(row: TableRow, snippet: str) -> Provenance:
         page=row.page,
         sheet=row.sheet,
         row=row.row,
+        table=row.table,
         source_snippet=snippet,
         confidence=1.0,
         status="proposed",
@@ -40,9 +43,17 @@ def extract_fields(
     client = llm or FakeLLM()
     fields: list[ProposedField] = []
     did_index = 0
+    did_ids: dict[int, tuple[int, Any]] = {}
     for row in rows:
         identifier = row.values.get("DID") or row.values.get("Identifier")
         if identifier is not None:
+            did_number = int(str(identifier), 0)
+            length = row.values.get("Bytes") or row.values.get("Payload octets")
+            if did_number in did_ids:
+                if did_ids[did_number][1] != length:
+                    raise ValueError(f"Conflicting lengths for DID {identifier}")
+                continue
+            did_ids[did_number] = (did_index, length)
             fields.append(
                 ProposedField(
                     f"dids[{did_index}].did",
@@ -60,38 +71,91 @@ def extract_fields(
                     )
                 )
             did_index += 1
+    names: dict[str, tuple[str, int] | None] = {}
+    for row in rows:
+        for kind, id_key, name_key in (
+            ("DID", "DID", "Signal name"),
+            ("routine", "Routine identifier", "Operation"),
+        ):
+            if row.values.get(id_key) is not None and row.values.get(name_key):
+                name = str(row.values[name_key]).casefold()
+                target = (kind, int(str(row.values[id_key]), 0))
+                names[name] = target if name not in names or names[name] == target else None
     for block in blocks:
-        for sentence in (part.strip() for part in block.text.split(".") if part.strip()):
+        for sentence in (
+            part.strip() for part in re.split(r"(?<!\d)\.(?!\d)|\n", block.text) if part.strip()
+        ):
             if not re.search(r"\b(?:when|while|requires)\b", sentence, re.IGNORECASE):
                 continue
-            result = client.parse_condition(sentence)
-            if result is None:
-                continue
-            condition = result.condition.model_copy(update={"target": result.target})
-            validate(condition.model_dump(), Precondition.model_json_schema())
-            provenance = Provenance(
-                document_id=document_id,
-                page=block.page,
-                sheet=block.sheet,
-                row=block.row,
-                source_snippet=sentence,
-                confidence=1.0,
-                status="proposed",
+            parse_text = sentence
+            for name, named_target in names.items():
+                if named_target is not None:
+                    kind, identifier = named_target
+                    noun = "data identifier" if kind == "DID" else "routine"
+                    parse_text = re.sub(
+                        r"\b" + re.escape(name) + r"\s+" + noun + r"\b",
+                        f"{kind} 0x{identifier:04x}",
+                        parse_text,
+                        flags=re.I,
+                    )
+            results = (
+                client.parse_conditions(parse_text)
+                if isinstance(client, FakeLLM)
+                else [result]
+                if (result := client.parse_condition(parse_text)) is not None
+                else []
             )
-            fields.append(
-                ProposedField(
-                    f"{result.target}.preconditions",
-                    condition.model_dump(),
-                    provenance,
+            if not results:
+                fields.append(
+                    ProposedField(
+                        "unresolved_requirements", [sentence], _block_provenance(block, sentence)
+                    )
                 )
+                continue
+            for result in results:
+                result.condition.source_text = sentence
+                fields.append(_prose_field(result, document_id, sentence, block))
+    unresolved = [field for field in fields if field.path == "unresolved_requirements"]
+    if unresolved:
+        fields = [field for field in fields if field.path != "unresolved_requirements"]
+        fields.append(
+            ProposedField(
+                "unresolved_requirements",
+                [s for f in unresolved for s in f.value],
+                unresolved[0].provenance,
             )
+        )
     return fields
+
+
+def _prose_field(result: Any, document_id: str, sentence: str, block: TextBlock) -> ProposedField:
+    condition = result.condition.model_copy(update={"target": result.target})
+    validate(condition.model_dump(), Precondition.model_json_schema())
+    provenance = Provenance(
+        document_id=document_id,
+        page=block.page,
+        sheet=block.sheet,
+        row=block.row,
+        source_snippet=sentence,
+        confidence=1.0,
+        status="proposed",
+    )
+    return ProposedField(
+        f"{result.target_kind}:{result.target}."
+        + (
+            "read_preconditions"
+            if result.target_kind == "did" and re.search(r"\bread\b", sentence, re.I)
+            else "preconditions"
+        ),
+        condition.model_dump(),
+        provenance,
+    )
 
 
 def reconstruct_spec(template: EcuSpec, fields: list[ProposedField]) -> EcuSpec:
     data = template.model_dump(mode="python")
     for field in fields:
-        if field.path.endswith(".preconditions"):
+        if field.path.endswith(".preconditions") and ":" in field.path:
             continue
         _assign_path(data, field.path, field.value)
     return EcuSpec.model_validate(data)
@@ -103,13 +167,25 @@ def extract_spec_fields(
     blocks: list[TextBlock],
     llm: LLMClient | None = None,
 ) -> list[ProposedField]:
+    rows = [replace(row, values=normalize(row.values)) for row in rows]
     fields = extract_fields(document_id, rows, blocks, llm)
     counters: dict[str, int] = {}
+    row_ids: dict[tuple[str, str], int] = {}
     for row in rows:
-        sheet = row.sheet or ""
+        sheet = layout_section(row.values, row.sheet)
         if sheet in {"Sessions", "Security", "DIDs", "Routines", "Services"}:
-            index = counters.get(sheet, 0)
-            counters[sheet] = index + 1
+            id_key = {
+                "DIDs": "DID",
+                "Routines": "Routine identifier",
+                "Sessions": "Mode code",
+                "Security": "Access tier",
+                "Services": "Service code",
+            }[sheet]
+            key = (sheet, str(row.values.get(id_key)))
+            if key not in row_ids:
+                row_ids[key] = counters.get(sheet, 0)
+                counters[sheet] = row_ids[key] + 1
+            index = row_ids[key]
         else:
             index = 0
         mappings: dict[str, list[tuple[str, Any]]] = {
@@ -122,6 +198,10 @@ def extract_spec_fields(
                 (f"dids[{index}].read_security", _literal(row.values.get("Read security"))),
                 (f"dids[{index}].write_security", _literal(row.values.get("Write security"))),
                 (f"dids[{index}].preconditions", _literal(row.values.get("Preconditions"))),
+                (
+                    f"dids[{index}].read_preconditions",
+                    _literal(row.values.get("Read preconditions")),
+                ),
             ],
             "Sessions": [
                 (f"sessions[{index}].id", row.values.get("Mode code")),
@@ -160,7 +240,14 @@ def extract_spec_fields(
             "Timing": [
                 ("timing.p2_ms", row.values.get("P2 milliseconds")),
                 ("timing.p2_star_ms", row.values.get("P2-star milliseconds")),
-                ("timing.s3_ms", row.values.get("S3 seconds")),
+                (
+                    "timing.s3_ms",
+                    row.values.get("S3 milliseconds")
+                    if "S3 milliseconds" in row.values
+                    else float(row.values["S3 seconds"]) * 1000
+                    if row.values.get("S3 seconds") is not None
+                    else None,
+                ),
             ],
             "Priority": [("nrc_priority", _csv_ints(row.values.get("NRC order")))],
         }
@@ -201,7 +288,75 @@ def extract_spec_fields(
         for path, value in _path_values(block.text):
             parsed = value if path in {"ecu_name", "oem", "version"} else _literal(value)
             fields.append(ProposedField(path, parsed, _block_provenance(block, value)))
-    return fields
+    return resolve_fields(bind_prose_conditions(fields))
+
+
+def resolve_fields(fields: list[ProposedField]) -> list[ProposedField]:
+    result: dict[str, ProposedField] = {}
+    for field in fields:
+        if field.path in result and result[field.path].value != field.value:
+            raise ValueError(
+                f"Conflicting extraction for {field.path}; engineer correction required"
+            )
+        result[field.path] = field
+    return list(result.values())
+
+
+def bind_prose_conditions(fields: list[ProposedField]) -> list[ProposedField]:
+    identifiers = {
+        (
+            ("did" if field.path.startswith("dids[") else "routine"),
+            int(field.value),
+        ): field.path.rsplit(".", 1)[0]
+        for field in fields
+        if re.fullmatch(r"(dids\[\d+\]\.did|routines\[\d+\]\.rid)", field.path)
+    }
+    result = [field for field in fields if ":" not in field.path]
+    grouped: dict[str, list[ProposedField]] = {}
+    for field in fields:
+        if ":" not in field.path:
+            continue
+        kind, suffix = field.path.split(":", 1)
+        key = (kind, int(suffix.split(".")[0], 0))
+        root = identifiers.get(key)
+        if root is None:
+            raise ValueError(f"Unresolved prose target {field.path}")
+        grouped.setdefault(root + "." + suffix.split(".", 1)[1], []).append(field)
+    for path, prose in grouped.items():
+        structured = [f for f in result if f.path == path and isinstance(f.value, list)]
+        values = [c for f in structured for c in f.value]
+
+        def signature(c: dict[str, Any]) -> tuple[Any, ...]:
+            op, value = c.get("op"), c.get("value")
+            if op == "!=" and isinstance(value, bool):
+                op, value = "==", not value
+            value_type = (
+                "bool"
+                if isinstance(value, bool)
+                else "number"
+                if isinstance(value, (int, float))
+                else "other"
+            )
+            return (c.get("kind"), c.get("signal"), op, value_type, value, c.get("unit"))
+
+        signatures = {signature(c) for c in values}
+        for field in prose:
+            condition = {**field.value, "target": None}
+            if signature(condition) not in signatures:
+                values.append(condition)
+                signatures.add(signature(condition))
+        result = [f for f in result if f.path != path]
+        references: list[SourceReference] = []
+        for field in structured + prose:
+            source = SourceReference.model_validate(field.provenance.model_dump())
+            for reference in [source, *field.provenance.references]:
+                if reference not in references:
+                    references.append(reference)
+        provenance = (structured[0] if structured else prose[0]).provenance.model_copy(
+            update={"references": references}
+        )
+        result.append(ProposedField(path, values, provenance))
+    return result
 
 
 def _block_provenance(block: TextBlock, snippet: str) -> Provenance:

@@ -1,77 +1,87 @@
 # SpecProbe
 
-SpecProbe implements the Case Study 5 diagnostic assistant workflow: ingest authorized specifications, review extracted fields, retrieve cited knowledge, generate deterministic UDS tests, approve a saved test suite, export Python automation, and compare simulator responses. The LLM proposes or explains information; deterministic rules own expected protocol outcomes.
+SpecProbe implements a **bounded, simulator-first engineering pilot** for Case Study 5: UDS Diagnostics and Automated Test Generation Assistant. It ingests specifications, retains source evidence, requires document/field/suite review, generates deterministic tests, retrieves cited knowledge and exports Python automation. It is not independently validated for arbitrary OEM documents or production ECUs.
 
-## Run locally
+See [STATUS](STATUS.md), [validation evidence and dependencies](docs/VALIDATION.md), [deployment and recovery](docs/OPERATIONS.md) and [supervised pilot protocol](docs/PILOT.md).
 
-Python 3.11 or later is required. Install the locked development environment:
+## Launch on Windows
 
-```powershell
-uv sync --extra dev
-```
-
-Start these in two terminals from the repository:
+Use Python 3.11+ and the locked environment:
 
 ```powershell
+uv sync --frozen --extra dev
+# Create a new local administrator secret; keep the file private and outside source control.
+New-Item -ItemType Directory -Force .specprobe | Out-Null
+uv run python -c "import secrets,pathlib; p=pathlib.Path('.specprobe/admin.secret'); p.open('x').write(secrets.token_urlsafe(48))"
+$env:SPECPROBE_AUTH_MODE = 'individual'
+$env:SPECPROBE_ADMIN_SECRET_FILE = (Resolve-Path .specprobe/admin.secret).Path
 uv run uvicorn specprobe.api.app:app --host 127.0.0.1 --port 8000
 ```
+
+In a second terminal:
 
 ```powershell
 uv run streamlit run src/specprobe/ui/app.py
 ```
 
-Open http://localhost:8501. API documentation is at http://localhost:8000/docs. SQLite data and Chroma collections persist across restarts. Copying `.env.example` does not automatically load environment variables: export them in your shell or deployment configuration.
+Open http://127.0.0.1:8501; API docs are at http://127.0.0.1:8000/docs. Restart existing API/UI processes after upgrading. Environment variables are explicitly exported; `.env.example` is documentation and is not automatically loaded.
 
-Docker is also supported:
+Provision one user and workspace through the API (administrator secret file must match the API process):
 
-```text
-docker compose up --build
+```powershell
+$admin = @{ 'X-Admin-Key' = (Get-Content .specprobe/admin.secret -Raw).Trim() }
+$workspaceKey = uv run python -c "import secrets; print(secrets.token_urlsafe(32))"
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/workspaces -Headers $admin -ContentType application/json -Body (@{workspace_id='pilot';api_key=$workspaceKey} | ConvertTo-Json)
+$user = Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/users/engineer -Headers $admin
+Invoke-RestMethod -Method Put -Uri 'http://127.0.0.1:8000/workspaces/pilot/members/engineer?role=reviewer' -Headers $admin
+# $user.token is returned once. Enter it as Individual access token in the UI.
 ```
 
-The API and UI bind to localhost on ports 8000 and 8501. Docker stores the database and vectors in the `specprobe-data` named volume. Docker requires an installed daemon and was not exercised on the development host.
+Viewer roles can read and query; editors can ingest/generate/run approved suites; reviewers can approve/revoke. Audit review identities come from the authenticated token. Administrator-controlled membership supports `viewer`, `editor`, `reviewer`, `revoked`; `POST /users/{id}/credential` rotates a token, and `?revoke=true` disables it. Tokens are stored as hashes. TLS, identity lifecycle and private secret-file permissions remain deployment responsibilities.
+
+For the existing localhost demonstration only, explicitly set `SPECPROBE_AUTH_MODE=workspace_key` before starting the API. This compatibility mode uses shared workspace keys and caller-supplied reviewer names; it does not provide individual accountability. It is not the deployed default.
 
 ## Engineer workflow
 
-1. Enter a workspace name and an API key of at least eight characters; click **Create workspace** once. Enter your reviewer name.
-2. Upload an authorized source into its standard, OEM, ECU, or project collection. Supported files are text-based PDF, XLSX, EcuSpec JSON, TXT and Markdown (10 MB maximum). TXT/Markdown are knowledge references rather than executable specifications.
-3. Approve the source document, then inspect extracted values and page/sheet/row evidence in **Specification review**. Approve, edit with JSON, or reject individual fields. After reviewing every field, batch approval is available. Rejected fields must be corrected before generation.
-4. Select the source document and generate a uniquely named suite. Inspect the saved specification, requests, setup sequences, expected responses, trace references and coverage summary.
-5. Approve that exact suite snapshot. Only approved suites may be exported or run. Revoking suite or source approval blocks subsequent execution; source revocation also blocks export and knowledge retrieval.
-6. Download the executable Python template or JSON suite, run against the simulator, validate individual hex messages, and download reports. The Python template exposes `make_transport(spec)` for an independently validated bench adapter.
+1. Upload authorized text PDF, XLSX or EcuSpec JSON (maximum 10 MB); TXT/Markdown are knowledge references. `data/synthetic/ground_truth/oem_b.json` is a complete **synthetic demonstration**, not an OEM specification.
+2. Inspect extracted evidence and index status. Retry incomplete indexing with `POST /workspaces/{id}/documents/{document_id}/recover`; then approve the source.
+3. Review every field, including preconditions, units, session/security references and unresolved requirements. Edits retain original provenance; batch approval commits atomically. Missing, contradictory or unsupported executable requirements block generation.
+4. Generate a uniquely named suite. Inspect setup and every intermediate expected response, positive/negative cases, request lengths, traces and configured response masks.
+5. Approve the exact immutable snapshot. Source or suite revocation blocks subsequent execution/export. Later field edits require a new reviewed snapshot. Protocol revision 2 blocks execution/export of old snapshots until regeneration and review.
+6. Run the simulator and inspect separate setup, communication, configuration and ECU response mismatch results. Download JSON reports or an executable Python template.
 
-For a complete demonstration, upload `data/synthetic/ground_truth/oem_b.json`. The rendered OEM-A PDF and OEM-B XLSX provide alternative structured input formats. JSON follows the `EcuSpec` schema and carries complete reviewable defaults. PDF/XLSX extraction supports the repository's documented synthetic layouts and canonical field paths; arbitrary OEM layouts need parser adaptation and expert validation. Missing required sections fail generation rather than falling back to a demo ECU. Scanned PDFs require OCR before ingestion.
+Supported modeled SIDs: `0x10`, `0x11`, `0x22`, `0x27`, `0x2E`, `0x31`, `0x3E`. `DataIdentifier.preconditions` constrains writes; `read_preconditions` constrains reads; routine conditions constrain routine execution. Explicit read prose maps to the read field. Other DID prose follows the write-condition schema convention and must be checked by the reviewer. Empty DID read/write session permissions disable that operation. Normalized JSON evidence is marked explicitly, flags schema-derived defaults, and does not invent raw file line numbers. Schema-only defaults are excluded from source retrieval. Reingest and review original legacy JSON uploads before new generation/retrieval; historical records remain stored. OR/negated compound prose and unmapped requirements require engineer resolution. Units must use the supported canonical forms; seconds in the labeled S3 table column convert to milliseconds.
 
-Saved suites are snapshots: later field edits do not silently change their tests. Generate and approve a new suite to incorporate a revision. Suite/run IDs must be globally unique within the database; repeated IDs return HTTP 409.
+`response_profile` configures DID data, two-byte seeds, identity/XOR seed-key algorithms, XOR byte and positive-response masks. Masks cannot hide service/echo identity or length mismatch. `basis=engineer_configured` requires explicit readable-DID data and seeds. This label does **not** mean externally validated. Otherwise zero-filled DID values, seed bytes and XOR keys are labeled simulator conventions. Proprietary key functions, variable seed lengths, real reset persistence and OEM-specific NRC behavior require an approved extension and bench vectors.
 
-## Local AI and retrieval
+`ControlledTransport` provides bounded P2/P2-star exchanges, response-pending handling, frame/echo checks and hardware enablement plus an approval-reference gate. No CAN interface is supplied or opened. Simulator S3 checks use virtual time and an observed session state. A real adapter must implement measured receive deadlines, controlled idle intervals, session observation and safe state preparation. Hardware execution is not available through the API.
 
-Offline mode uses deterministic token-hash embeddings and returns source excerpts with citations. Similarity scores are not calibrated confidence. Unapproved documents never appear in retrieval. Collections separate standard/OEM/ECU/project knowledge within each workspace.
+## Local AI and evaluation
 
-For local model explanations, run an approved Ollama model on your infrastructure and configure:
+Offline retrieval returns approved source excerpts using deterministic hash embeddings. These are not trained semantic embeddings. Optional local models require separately supplied infrastructure:
 
 ```powershell
+uv sync --frozen --extra dev --extra local-model
 $env:SPECPROBE_OLLAMA_URL = 'http://127.0.0.1:11434'
-$env:SPECPROBE_OLLAMA_MODEL = 'llama3.2'
+$env:SPECPROBE_OLLAMA_MODEL = '<your-approved-installed-model>'
+$env:SPECPROBE_EMBED_MODEL_PATH = 'C:/models/<approved-local-embedding-directory>'
+uv run python -m eval.local_ai_eval --output .specprobe/local-ai.json
 ```
 
-Then select **Use the configured local model** in the Knowledge tab. Evidence and questions are supplied as untrusted content, citations must refer to retrieved evidence, and answers remain subject to engineer review. Optional prose extraction through Ollama is enabled with `SPECPROBE_EXTRACTION_MODE=ollama`. Local model connectivity failures return an explicit error. A live model was not provisioned or benchmarked during development; client integration is tested with controlled responses.
+Model answers must quote contiguous text from the cited excerpt; valid citation numbers alone are insufficient. Unsupported claims produce an insufficient-evidence answer. Structured source conflicts require engineer resolution. This conservative gate rejects some valid paraphrases and is not semantic entailment validation. The benchmark records retrieval recall@5/MRR separately from extractive answer support and preserves raw answers for human semantic review. The missing-infrastructure run is explicitly `NOT_RUN`.
 
-For semantic BGE/E5 embeddings, install `uv sync --extra dev --extra local-model`, download an approved model separately, and point `SPECPROBE_EMBED_MODEL_PATH` at its local directory. Loading uses `local_files_only=True`; the application does not download models. Start with a new `SPECPROBE_VECTOR_PATH` when changing embedding models or dimensions and reingest sources. Chroma telemetry is disabled.
+When changing embedding models/dimensions, use a new vector path and reindex every approved source. The optional model loader uses local files only. Chroma telemetry is disabled.
 
-## Validation and practical limits
-
-```text
-uv run ruff check src tests
+```powershell
+uv run ruff check src tests eval
 uv run mypy src
 uv run pytest -q
 uv run python -m eval.extraction_eval
+uv run python -m eval.heldout_eval --output .specprobe/candidate-extraction.json
 uv run python -m eval.mutation_eval
+uv run python -m eval.pilot_eval --observations data/evaluation/pilot-observations.csv --output .specprobe/pilot.json
 ```
 
-Regression tests cover JSON/PDF/XLSX upload-to-run, edited values, workspace isolation, approval and revocation gates, saved snapshots, persistent retrieval after restart, executable Python export, citation controls, audit integrity and UI onboarding. The independent simulator is tested using hand-authored golden vectors and named/AST-generated defects.
+The frozen extraction set is a **synthetic candidate holdout awaiting independent human review**. Its PDF table currently produces an explicit unresolved-target failure; its XLSX routine matrix extracts successfully. Reports include precision/recall by field type, missed requirements, correction actions and null measured correction time. Neither synthetic extraction scores nor mutation scores are real-world reliability percentages. Business benefits remain unmeasured until the supervised pilot is completed.
 
-The demo suite has 2,014 cases. Mechanical evaluation reports 227 compilable mutants, 185 output mismatches, 27 crashes and 30 equivalent survivors: raw 81.5%, adjusted 93.9%, with no observable genuine gaps in the classifier's tested sequences. These are simulator results, not real ECU defect-detection guarantees. Extraction evaluation measures the synthetic fixture layouts; its scores do not establish accuracy on arbitrary OEM documents.
-
-Coverage reports count generated positive/negative/suppressed outcomes, services, NRCs and test families. They are not percentages of a complete ISO 14229 requirements catalogue. P2/P2-star/S3 values are stored, but real timing behavior is not measured. Deterministic security keys and zero-filled DID read data are simulator conventions that must be replaced or parameterized for actual ECUs. Python export satisfies the case study's alternative framework export requirement; native CANoe/CAPL, SocketCAN and ODX/CDD integrations remain optional future adapters.
-
-This is a controlled engineering pilot. Keys isolate workspaces and are salted/hashed, but reviewers are named by the key holder rather than independently authenticated enterprise users. Public workspace registration is intended for localhost use; enterprise rollout needs identity/RBAC, TLS, deployment isolation, backup and operational controls. Engineering acceptance, generation accuracy on representative customer specifications, authoring-time reduction and template reuse rate require a measured user pilot.
+Docker configuration uses frozen dependencies, non-root execution, file-mounted administrator secrets and health checks. Docker is unavailable on the development host; follow the runtime validation procedure in `docs/OPERATIONS.md` before accepting that deployment.

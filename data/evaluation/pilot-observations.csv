@@ -1,0 +1,1 @@
+participant_id,task_id,mode,author_seconds,review_seconds,generated_cases,accepted_cases,requirements_total,requirements_covered,confirmed_defects,defect_confirmation_reference,reviewer

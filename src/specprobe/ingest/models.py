@@ -18,6 +18,7 @@ class TableRow:
     page: int | None = None
     sheet: str | None = None
     row: int | None = None
+    table: int | None = None
 
     @property
     def location(self) -> str:

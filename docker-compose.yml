@@ -7,6 +7,10 @@ services:
     environment:
       SPECPROBE_DATABASE_URL: sqlite:////data/specprobe.db
       SPECPROBE_VECTOR_PATH: /data/chroma
+      SPECPROBE_AUTH_MODE: individual
+      SPECPROBE_ADMIN_SECRET_FILE: /run/secrets/admin_secret
+    secrets:
+      - admin_secret
     volumes:
       - specprobe-data:/data
   ui:
@@ -17,6 +21,15 @@ services:
     environment:
       SPECPROBE_API_URL: http://api:8000
     depends_on:
-      - api
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8501/_stcore/health',timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+secrets:
+  admin_secret:
+    file: ${SPECPROBE_ADMIN_SECRET_PATH:?Provide a local administrator secret file path}
 volumes:
   specprobe-data:

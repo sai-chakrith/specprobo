@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import JSON, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import JSON, DateTime, ForeignKey, Integer, LargeBinary, String, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -73,3 +73,31 @@ class AuditLogRow(Base):
     timestamp: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     previous_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     row_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+
+
+class IndexJob(Base):
+    __tablename__ = "index_jobs"
+    document_id: Mapped[str] = mapped_column(ForeignKey("documents.id"), primary_key=True)
+    status: Mapped[str] = mapped_column(String(32), default="pending")
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    error: Mapped[str] = mapped_column(Text, default="")
+
+
+class DocumentBlob(Base):
+    __tablename__ = "document_blobs"
+    document_id: Mapped[str] = mapped_column(ForeignKey("documents.id"), primary_key=True)
+    content: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+
+
+class User(Base):
+    __tablename__ = "users"
+    id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    token_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    active: Mapped[int] = mapped_column(Integer, default=1)
+
+
+class Membership(Base):
+    __tablename__ = "memberships"
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    workspace_id: Mapped[str] = mapped_column(ForeignKey("workspaces.id"), primary_key=True)
+    role: Mapped[str] = mapped_column(String(32), nullable=False)

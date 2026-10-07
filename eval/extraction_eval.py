@@ -2,6 +2,7 @@ import json
 from collections.abc import Callable
 from pathlib import Path
 
+from specprobe.domain.schema import EcuSpec
 from specprobe.ingest.extractor import extract_spec_fields
 from specprobe.ingest.models import TableRow, TextBlock
 from specprobe.ingest.parsers import parse_excel, parse_pdf
@@ -75,7 +76,7 @@ def _normalize_precondition(
 
 
 def _expected(path: Path) -> dict[str, set[tuple[object, ...]]]:
-    spec = json.loads(path.read_text(encoding="utf-8"))
+    spec = EcuSpec.model_validate_json(path.read_text(encoding="utf-8")).model_dump(mode="json")
     expected: dict[str, set[tuple[object, ...]]] = {
         "did": {("did", item["did"]) for item in spec["dids"]},
         "length_bytes": {("length_bytes", item["length_bytes"]) for item in spec["dids"]},
@@ -89,7 +90,8 @@ def _expected(path: Path) -> dict[str, set[tuple[object, ...]]]:
             )
             for item in spec["dids"]
             for condition in item.get("preconditions", [])
-        } | {
+        }
+        | {
             _normalize_precondition(
                 f"0x{item['rid']:04x}",
                 condition.get("signal"),
@@ -134,9 +136,7 @@ def _expected(path: Path) -> dict[str, set[tuple[object, ...]]]:
             "preconditions": item.get("preconditions", []),
         }.items()
     }
-    expected["timing"] = {
-        (f"timing.{key}", value) for key, value in spec["timing"].items()
-    }
+    expected["timing"] = {(f"timing.{key}", value) for key, value in spec["timing"].items()}
     expected["nrc_priority"] = {("nrc_priority", json.dumps(spec["nrc_priority"]))}
     return expected
 
@@ -161,6 +161,11 @@ def main() -> None:
     for name, (truth_path, document_path, parser) in cases.items():
         blocks, rows = parser(document_path, name)
         extracted = extract_spec_fields(name, rows, blocks)
+        identifiers = {
+            field.path.rsplit(".", 1)[0]: int(field.value)
+            for field in extracted
+            if field.path.endswith((".did", ".rid"))
+        }
         actual: dict[str, set[tuple[object, ...]]] = {
             "did": {("did", field.value) for field in extracted if field.path.endswith(".did")},
             "length_bytes": {
@@ -170,14 +175,15 @@ def main() -> None:
             },
             "precondition": {
                 _normalize_precondition(
-                    str(field.value.get("target")),
-                    field.value.get("signal"),
-                    field.value.get("op"),
-                    field.value.get("value"),
-                    field.value.get("unit"),
+                    f"0x{identifiers[field.path.rsplit('.', 1)[0]]:04x}",
+                    condition.get("signal"),
+                    condition.get("op"),
+                    condition.get("value"),
+                    condition.get("unit"),
                 )
                 for field in extracted
-                if field.path.endswith(".preconditions") and isinstance(field.value, dict)
+                if field.path.endswith(".preconditions") and isinstance(field.value, list)
+                for condition in field.value
             },
             "session": set(),
             "security": set(),
@@ -202,9 +208,7 @@ def main() -> None:
             elif field.path.startswith("timing."):
                 actual.setdefault("timing", set()).add((field.path, field.value))
             elif field.path == "nrc_priority":
-                actual.setdefault("nrc_priority", set()).add(
-                    (field.path, json.dumps(field.value))
-                )
+                actual.setdefault("nrc_priority", set()).add((field.path, json.dumps(field.value)))
         for field_type, expected in _expected(truth_path).items():
             correct = expected & actual[field_type]
             precision = len(correct) / len(actual[field_type]) if actual[field_type] else 1.0

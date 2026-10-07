@@ -12,7 +12,11 @@ def request(method: str, path: str, **kwargs: Any) -> requests.Response | None:
         response = requests.request(
             method,
             st.session_state["api_url"].rstrip("/") + path,
-            headers={"X-API-Key": st.session_state.get("api_key", "")},
+            headers={
+                "X-API-Key": st.session_state.get("api_key", ""),
+                "Authorization": "Bearer " + st.session_state.get("user_token", ""),
+                "X-Admin-Key": st.session_state.get("admin_secret", ""),
+            },
             timeout=180,
             **kwargs,
         )
@@ -32,6 +36,10 @@ st.session_state["api_url"] = st.sidebar.text_input(
     "API URL", os.environ.get("SPECPROBE_API_URL", "http://127.0.0.1:8000")
 )
 st.session_state["api_key"] = st.sidebar.text_input("Workspace API key", type="password")
+st.session_state["user_token"] = st.sidebar.text_input("Individual access token", type="password")
+st.session_state["admin_secret"] = st.sidebar.text_input(
+    "Administrator secret (workspace creation)", type="password"
+)
 workspace = st.sidebar.text_input("Workspace")
 reviewer = st.sidebar.text_input("Reviewer name")
 if st.sidebar.button("Create workspace") and workspace:
@@ -42,7 +50,7 @@ if st.sidebar.button("Create workspace") and workspace:
     )
     if response is not None:
         st.sidebar.success("Workspace created")
-if not workspace or not st.session_state["api_key"]:
+if not workspace or not (st.session_state["api_key"] or st.session_state["user_token"]):
     st.info(
         "Enter a workspace and API key in the sidebar. New keys need at least eight characters."
     )
@@ -74,6 +82,11 @@ with knowledge:
             f"{doc['name']} — {'approved' if doc['approved'] else 'awaiting approval'}"
         ):
             st.write(doc["id"], doc["kind"])
+            if doc.get("requires_reingest"):
+                st.warning(
+                    "Reingest the original JSON: legacy evidence cannot distinguish "
+                    "schema defaults from source values."
+                )
             approve, revoke = st.columns(2)
             for column, label, approved in [
                 (approve, "Approve source", True),

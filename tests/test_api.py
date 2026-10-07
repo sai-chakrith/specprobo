@@ -300,7 +300,7 @@ def test_local_answers_require_valid_citations_and_source_revocation_blocks_runs
     generated(client, doc)
     approve_suite(client)
     monkeypatch.setattr(
-        OllamaClient, "answer", lambda self, question, evidence: "DID information [1]"
+        OllamaClient, "answer", lambda self, question, evidence: "[1] " + evidence[0]["text"]
     )
     result = client.post(
         "/workspaces/one/query",
@@ -317,8 +317,9 @@ def test_local_answers_require_valid_citations_and_source_revocation_blocks_runs
             "/workspaces/one/query",
             headers=HEADERS,
             json={"question": "DID read security", "use_llm": True},
-        ).status_code
-        == 503
+        )
+        .json()["answer"]
+        .startswith("Insufficient supported evidence")
     )
     client.post(
         f"/workspaces/one/documents/{doc}/review",

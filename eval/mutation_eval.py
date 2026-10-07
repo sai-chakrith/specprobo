@@ -18,9 +18,7 @@ def validate_suite(spec: EcuSpec, suite: Sequence[TestCase]) -> None:
     from specprobe.sim.ecu import EcuSimulator
 
     failures = [
-        result.test_id
-        for result in run_suite(list(suite), EcuSimulator(spec))
-        if not result.passed
+        result.test_id for result in run_suite(list(suite), EcuSimulator(spec)) if not result.passed
     ]
     if failures:
         raise ValueError(f"suite failed on clean simulator: {failures}")

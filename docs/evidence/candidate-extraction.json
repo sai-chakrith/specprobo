@@ -1,0 +1,329 @@
+{
+  "status": "PROVISIONAL_SYNTHETIC_CANDIDATE",
+  "manifest_sha256": "60716e871b3cef60639c4a77fb0a30fdb7f345aaafe22370aff31fd3da553962",
+  "review_status": "pending",
+  "field_metrics": {
+    "did": {
+      "tp": 0,
+      "fp": 0,
+      "fn": 1,
+      "missed": [
+        {
+          "case": "voltage",
+          "path": "dids[0].did",
+          "expected": 53313
+        }
+      ],
+      "incorrect": [],
+      "precision": null,
+      "recall": 0.0,
+      "correction_actions": 1,
+      "measured_correction_seconds": null
+    },
+    "length": {
+      "tp": 0,
+      "fp": 0,
+      "fn": 1,
+      "missed": [
+        {
+          "case": "voltage",
+          "path": "dids[0].length_bytes",
+          "expected": 2
+        }
+      ],
+      "incorrect": [],
+      "precision": null,
+      "recall": 0.0,
+      "correction_actions": 1,
+      "measured_correction_seconds": null
+    },
+    "metadata": {
+      "tp": 0,
+      "fp": 0,
+      "fn": 2,
+      "missed": [
+        {
+          "case": "voltage",
+          "path": "dids[0].name",
+          "expected": "RailMonitor"
+        },
+        {
+          "case": "voltage",
+          "path": "dids[0].encoding",
+          "expected": "unsigned"
+        }
+      ],
+      "incorrect": [],
+      "precision": null,
+      "recall": 0.0,
+      "correction_actions": 2,
+      "measured_correction_seconds": null
+    },
+    "sessions": {
+      "tp": 2,
+      "fp": 0,
+      "fn": 2,
+      "missed": [
+        {
+          "case": "voltage",
+          "path": "dids[0].read_sessions",
+          "expected": []
+        },
+        {
+          "case": "voltage",
+          "path": "dids[0].write_sessions",
+          "expected": []
+        }
+      ],
+      "incorrect": [],
+      "precision": 1.0,
+      "recall": 0.5,
+      "correction_actions": 2,
+      "measured_correction_seconds": null
+    },
+    "preconditions": {
+      "tp": 0,
+      "fp": 0,
+      "fn": 1,
+      "missed": [
+        {
+          "case": "voltage",
+          "path": "dids[0].preconditions",
+          "expected": [
+            {
+              "kind": "signal",
+              "signal": "rail_voltage",
+              "op": ">",
+              "value": 11.5,
+              "unit": "V",
+              "target": null,
+              "source_text": "DID 0xD041 requires rail_voltage above 11.5 V and ignition is not false"
+            },
+            {
+              "kind": "signal",
+              "signal": "ignition",
+              "op": "!=",
+              "value": false,
+              "unit": null,
+              "target": null,
+              "source_text": "DID 0xD041 requires rail_voltage above 11.5 V and ignition is not false"
+            }
+          ]
+        }
+      ],
+      "incorrect": [],
+      "precision": null,
+      "recall": 0.0,
+      "correction_actions": 1,
+      "measured_correction_seconds": null
+    },
+    "routine": {
+      "tp": 4,
+      "fp": 0,
+      "fn": 0,
+      "missed": [],
+      "incorrect": [],
+      "precision": 1.0,
+      "recall": 1.0,
+      "correction_actions": 0,
+      "measured_correction_seconds": null
+    },
+    "controls": {
+      "tp": 2,
+      "fp": 0,
+      "fn": 0,
+      "missed": [],
+      "incorrect": [],
+      "precision": 1.0,
+      "recall": 1.0,
+      "correction_actions": 0,
+      "measured_correction_seconds": null
+    },
+    "parameters": {
+      "tp": 2,
+      "fp": 0,
+      "fn": 0,
+      "missed": [],
+      "incorrect": [],
+      "precision": 1.0,
+      "recall": 1.0,
+      "correction_actions": 0,
+      "measured_correction_seconds": null
+    }
+  },
+  "measured_correction_seconds": null,
+  "cases": [
+    {
+      "id": "voltage",
+      "extraction_error": "Unresolved prose target did:0xd041.preconditions",
+      "locations": []
+    },
+    {
+      "id": "routines",
+      "extraction_error": null,
+      "locations": [
+        {
+          "field_id": "43480771-0289-409f-af65-863e884e2d73",
+          "document_id": "routines",
+          "page": null,
+          "sheet": "Vendor routine matrix",
+          "row": 3,
+          "table": null,
+          "origin": "source",
+          "defaulted": false,
+          "references": [],
+          "source_snippet": "{'RID': '0x0472', 'Routine name': 'LatchSelfTest', 'Routine controls': '1,3', 'Parameter lengths': '{1: 2, 3: 0}', 'Allowed sessions': '1,3', 'Routine identifier': '0x0472', 'Operation': 'LatchSelfTest', 'Controls': '1,3', 'Parameter octets': '{1: 2, 3: 0}', 'Allowed modes': '1,3'}",
+          "confidence": 1.0,
+          "status": "proposed",
+          "reviewer": null,
+          "timestamp": "2026-10-07T20:45:18.457404Z"
+        },
+        {
+          "field_id": "cf0ffd06-afad-4209-8fac-a675b8df7719",
+          "document_id": "routines",
+          "page": null,
+          "sheet": "Vendor routine matrix",
+          "row": 3,
+          "table": null,
+          "origin": "source",
+          "defaulted": false,
+          "references": [],
+          "source_snippet": "{'RID': '0x0472', 'Routine name': 'LatchSelfTest', 'Routine controls': '1,3', 'Parameter lengths': '{1: 2, 3: 0}', 'Allowed sessions': '1,3', 'Routine identifier': '0x0472', 'Operation': 'LatchSelfTest', 'Controls': '1,3', 'Parameter octets': '{1: 2, 3: 0}', 'Allowed modes': '1,3'}",
+          "confidence": 1.0,
+          "status": "proposed",
+          "reviewer": null,
+          "timestamp": "2026-10-07T20:45:18.457425Z"
+        },
+        {
+          "field_id": "70410d73-11a4-4bdd-95fa-3ebb754af4a0",
+          "document_id": "routines",
+          "page": null,
+          "sheet": "Vendor routine matrix",
+          "row": 3,
+          "table": null,
+          "origin": "source",
+          "defaulted": false,
+          "references": [],
+          "source_snippet": "{'RID': '0x0472', 'Routine name': 'LatchSelfTest', 'Routine controls': '1,3', 'Parameter lengths': '{1: 2, 3: 0}', 'Allowed sessions': '1,3', 'Routine identifier': '0x0472', 'Operation': 'LatchSelfTest', 'Controls': '1,3', 'Parameter octets': '{1: 2, 3: 0}', 'Allowed modes': '1,3'}",
+          "confidence": 1.0,
+          "status": "proposed",
+          "reviewer": null,
+          "timestamp": "2026-10-07T20:45:18.457438Z"
+        },
+        {
+          "field_id": "279aa525-59f2-4229-8e35-be42238ebfe7",
+          "document_id": "routines",
+          "page": null,
+          "sheet": "Vendor routine matrix",
+          "row": 3,
+          "table": null,
+          "origin": "source",
+          "defaulted": false,
+          "references": [],
+          "source_snippet": "{'RID': '0x0472', 'Routine name': 'LatchSelfTest', 'Routine controls': '1,3', 'Parameter lengths': '{1: 2, 3: 0}', 'Allowed sessions': '1,3', 'Routine identifier': '0x0472', 'Operation': 'LatchSelfTest', 'Controls': '1,3', 'Parameter octets': '{1: 2, 3: 0}', 'Allowed modes': '1,3'}",
+          "confidence": 1.0,
+          "status": "proposed",
+          "reviewer": null,
+          "timestamp": "2026-10-07T20:45:18.457448Z"
+        },
+        {
+          "field_id": "f64688cb-9e30-4662-b861-d872a9543bae",
+          "document_id": "routines",
+          "page": null,
+          "sheet": "Vendor routine matrix",
+          "row": 3,
+          "table": null,
+          "origin": "source",
+          "defaulted": false,
+          "references": [],
+          "source_snippet": "{'RID': '0x0472', 'Routine name': 'LatchSelfTest', 'Routine controls': '1,3', 'Parameter lengths': '{1: 2, 3: 0}', 'Allowed sessions': '1,3', 'Routine identifier': '0x0472', 'Operation': 'LatchSelfTest', 'Controls': '1,3', 'Parameter octets': '{1: 2, 3: 0}', 'Allowed modes': '1,3'}",
+          "confidence": 1.0,
+          "status": "proposed",
+          "reviewer": null,
+          "timestamp": "2026-10-07T20:45:18.457456Z"
+        },
+        {
+          "field_id": "68be8362-a35e-4a24-8bc6-59fe28778656",
+          "document_id": "routines",
+          "page": null,
+          "sheet": "Vendor routine matrix",
+          "row": 5,
+          "table": null,
+          "origin": "source",
+          "defaulted": false,
+          "references": [],
+          "source_snippet": "{'RID': '0x0473', 'Routine name': 'SensorSelfTest', 'Routine controls': '1', 'Parameter lengths': '{1: 0}', 'Allowed sessions': '3', 'Routine identifier': '0x0473', 'Operation': 'SensorSelfTest', 'Controls': '1', 'Parameter octets': '{1: 0}', 'Allowed modes': '3'}",
+          "confidence": 1.0,
+          "status": "proposed",
+          "reviewer": null,
+          "timestamp": "2026-10-07T20:45:18.457522Z"
+        },
+        {
+          "field_id": "a992aff5-1365-489f-8c5f-affb4f7ed759",
+          "document_id": "routines",
+          "page": null,
+          "sheet": "Vendor routine matrix",
+          "row": 5,
+          "table": null,
+          "origin": "source",
+          "defaulted": false,
+          "references": [],
+          "source_snippet": "{'RID': '0x0473', 'Routine name': 'SensorSelfTest', 'Routine controls': '1', 'Parameter lengths': '{1: 0}', 'Allowed sessions': '3', 'Routine identifier': '0x0473', 'Operation': 'SensorSelfTest', 'Controls': '1', 'Parameter octets': '{1: 0}', 'Allowed modes': '3'}",
+          "confidence": 1.0,
+          "status": "proposed",
+          "reviewer": null,
+          "timestamp": "2026-10-07T20:45:18.457532Z"
+        },
+        {
+          "field_id": "5509b1f3-1efa-4c1d-a802-95dfac86145f",
+          "document_id": "routines",
+          "page": null,
+          "sheet": "Vendor routine matrix",
+          "row": 5,
+          "table": null,
+          "origin": "source",
+          "defaulted": false,
+          "references": [],
+          "source_snippet": "{'RID': '0x0473', 'Routine name': 'SensorSelfTest', 'Routine controls': '1', 'Parameter lengths': '{1: 0}', 'Allowed sessions': '3', 'Routine identifier': '0x0473', 'Operation': 'SensorSelfTest', 'Controls': '1', 'Parameter octets': '{1: 0}', 'Allowed modes': '3'}",
+          "confidence": 1.0,
+          "status": "proposed",
+          "reviewer": null,
+          "timestamp": "2026-10-07T20:45:18.457541Z"
+        },
+        {
+          "field_id": "95738d96-2d02-4c5a-9e83-b0ef69309fac",
+          "document_id": "routines",
+          "page": null,
+          "sheet": "Vendor routine matrix",
+          "row": 5,
+          "table": null,
+          "origin": "source",
+          "defaulted": false,
+          "references": [],
+          "source_snippet": "{'RID': '0x0473', 'Routine name': 'SensorSelfTest', 'Routine controls': '1', 'Parameter lengths': '{1: 0}', 'Allowed sessions': '3', 'Routine identifier': '0x0473', 'Operation': 'SensorSelfTest', 'Controls': '1', 'Parameter octets': '{1: 0}', 'Allowed modes': '3'}",
+          "confidence": 1.0,
+          "status": "proposed",
+          "reviewer": null,
+          "timestamp": "2026-10-07T20:45:18.457551Z"
+        },
+        {
+          "field_id": "41921b15-9223-413a-b9ae-d3f415954d09",
+          "document_id": "routines",
+          "page": null,
+          "sheet": "Vendor routine matrix",
+          "row": 5,
+          "table": null,
+          "origin": "source",
+          "defaulted": false,
+          "references": [],
+          "source_snippet": "{'RID': '0x0473', 'Routine name': 'SensorSelfTest', 'Routine controls': '1', 'Parameter lengths': '{1: 0}', 'Allowed sessions': '3', 'Routine identifier': '0x0473', 'Operation': 'SensorSelfTest', 'Controls': '1', 'Parameter octets': '{1: 0}', 'Allowed modes': '3'}",
+          "confidence": 1.0,
+          "status": "proposed",
+          "reviewer": null,
+          "timestamp": "2026-10-07T20:45:18.457560Z"
+        }
+      ]
+    }
+  ],
+  "limitation": "Field edit counts are not measured engineering effort; synthetic results do not estimate OEM reliability."
+}

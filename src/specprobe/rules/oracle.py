@@ -1,5 +1,5 @@
 from collections.abc import Callable
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 
 from ..domain.schema import EcuSpec, Precondition
 from .priority import choose_nrc
@@ -30,6 +30,7 @@ class State:
     session: int
     security_level: int = 0
     pending_security_level: int | None = None
+    did_values: dict[int, bytes] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -55,15 +56,20 @@ def _negative(sid: int, nrc: int) -> ExpectedResponse:
 
 def _choose(spec: EcuSpec, sid: int, candidates: set[int]) -> ExpectedResponse:
     selected = choose_nrc(candidates, spec.nrc_priority)
-    return _negative(sid, selected if selected is not None else min(candidates))
+    if selected is None:
+        raise ValueError("NRC ordering does not resolve the modeled failure")
+    return _negative(sid, selected)
 
 
 def _seed(level: int) -> bytes:
     return bytes((0xA5, level & 0xFF))
 
 
-def security_key(seed: bytes) -> bytes:
-    return bytes(value ^ 0x5A for value in seed)
+def security_key(seed: bytes, spec: EcuSpec | None = None) -> bytes:
+    if spec is not None and spec.response_profile.key_algorithm == "identity":
+        return seed
+    xor_byte = spec.response_profile.xor_byte if spec is not None else 0x5A
+    return bytes(value ^ xor_byte for value in seed)
 
 
 def _condition_holds(condition: Precondition, state: State, env: dict[str, object]) -> bool:
@@ -74,6 +80,16 @@ def _condition_holds(condition: Precondition, state: State, env: dict[str, objec
     else:
         actual = env.get(condition.signal or "")
     expected = condition.value
+    if actual is None:
+        return False
+    if isinstance(expected, bool):
+        if not isinstance(actual, bool):
+            return False
+    elif isinstance(expected, (int, float)):
+        if isinstance(actual, bool) or not isinstance(actual, (int, float)):
+            return False
+    elif isinstance(expected, str) and not isinstance(actual, str):
+        return False
     if condition.op == "==":
         return actual == expected
     if condition.op == "!=":
@@ -121,7 +137,7 @@ def _service_nrcs(spec: EcuSpec, state: State, sid: int, request: bytes) -> set[
     return candidates
 
 
-def step(
+def _step(
     spec: EcuSpec, state: State, env: dict[str, object], request: bytes
 ) -> tuple[ExpectedResponse, State]:
     if not request:
@@ -139,25 +155,43 @@ def step(
         if spec.sessions and not any(item.id == target for item in spec.sessions):
             return _choose(spec, sid, {NRC_REQUEST_OUT_OF_RANGE}), state
         new_state = replace(state, session=target, security_level=0, pending_security_level=None)
-        return ExpectedResponse(positive=bytes((positive_sid(sid), target))), new_state
+        timing = (
+            b""
+            if spec.standard_version == 2006
+            else (
+                spec.timing.p2_ms.to_bytes(2, "big")
+                + (spec.timing.p2_star_ms // 10).to_bytes(2, "big")
+            )
+        )
+        return ExpectedResponse(positive=bytes((positive_sid(sid), target)) + timing), new_state
     if sid == SID_SECURITY_ACCESS:
         if len(request) < 2:
             return _choose(spec, sid, {NRC_INCORRECT_LENGTH}), state
         subfunction = request[1]
         level = (subfunction + 1) // 2
-        if level <= 0 or level > max((item.level for item in spec.security_levels), default=0):
+        if level <= 0 or level not in {item.level for item in spec.security_levels}:
             return _choose(spec, sid, {NRC_REQUEST_OUT_OF_RANGE}), state
         if subfunction % 2:
             if len(request) != 2:
                 return _choose(spec, sid, {NRC_INCORRECT_LENGTH}), state
             return ExpectedResponse(
-                positive=bytes((positive_sid(sid), subfunction)) + _seed(level)
+                positive=bytes((positive_sid(sid), subfunction))
+                + (
+                    bytes.fromhex(spec.response_profile.seeds[level])
+                    if level in spec.response_profile.seeds
+                    else _seed(level)
+                )
             ), replace(state, pending_security_level=level)
         if len(request) != 4:
             return _choose(spec, sid, {NRC_INCORRECT_LENGTH}), state
         if state.pending_security_level != level:
             return _choose(spec, sid, {NRC_REQUEST_SEQUENCE_ERROR}), state
-        if request[2:] != security_key(_seed(level)):
+        seed = (
+            bytes.fromhex(spec.response_profile.seeds[level])
+            if level in spec.response_profile.seeds
+            else _seed(level)
+        )
+        if request[2:] != security_key(seed, spec):
             return _choose(spec, sid, {NRC_INVALID_KEY}), state
         return ExpectedResponse(positive=bytes((positive_sid(sid), subfunction))), replace(
             state, security_level=level, pending_security_level=None
@@ -166,18 +200,27 @@ def step(
         if len(request) != 3:
             return _choose(spec, sid, {NRC_INCORRECT_LENGTH}), state
         did = spec.did(int.from_bytes(request[1:3], "big"))
-        if did is None or did.read_sessions and state.session not in did.read_sessions:
+        if did is None or not did.read_sessions or state.session not in did.read_sessions:
             return _choose(spec, sid, {NRC_REQUEST_OUT_OF_RANGE}), state
         if did.read_security is not None and state.security_level < did.read_security:
             return _choose(spec, sid, {NRC_SECURITY_ACCESS_DENIED}), state
+        if not _conditions_hold(did.read_preconditions, state, env):
+            return _choose(spec, sid, {NRC_CONDITIONS_NOT_CORRECT}), state
         return ExpectedResponse(
-            positive=bytes((positive_sid(sid),)) + request[1:3] + bytes(did.length_bytes)
+            positive=bytes((positive_sid(sid),))
+            + request[1:3]
+            + state.did_values.get(
+                did.did,
+                bytes.fromhex(spec.response_profile.did_data[did.did])
+                if did.did in spec.response_profile.did_data
+                else bytes(did.length_bytes),
+            )
         ), state
     if sid == SID_WRITE_DATA:
         if len(request) < 3:
             return _choose(spec, sid, {NRC_INCORRECT_LENGTH}), state
         did = spec.did(int.from_bytes(request[1:3], "big"))
-        if did is None or did.write_sessions and state.session not in did.write_sessions:
+        if did is None or not did.write_sessions or state.session not in did.write_sessions:
             return _choose(spec, sid, {NRC_REQUEST_OUT_OF_RANGE}), state
         if did.write_security is not None and state.security_level < did.write_security:
             return _choose(spec, sid, {NRC_SECURITY_ACCESS_DENIED}), state
@@ -185,7 +228,9 @@ def step(
             return _choose(spec, sid, {NRC_INCORRECT_LENGTH}), state
         if not _conditions_hold(did.preconditions, state, env):
             return _choose(spec, sid, {NRC_CONDITIONS_NOT_CORRECT}), state
-        return ExpectedResponse(positive=bytes((positive_sid(sid),)) + request[1:3]), state
+        return ExpectedResponse(positive=bytes((positive_sid(sid),)) + request[1:3]), replace(
+            state, did_values={**state.did_values, did.did: request[3:]}
+        )
     if sid == SID_ROUTINE_CONTROL:
         if len(request) < 4:
             return _choose(spec, sid, {NRC_INCORRECT_LENGTH}), state
@@ -212,7 +257,12 @@ def step(
         subfunction = request[1] if len(request) == 2 else 0
         if subfunction & 0x7F:
             return _choose(spec, sid, {NRC_SUBFUNCTION_NOT_SUPPORTED}), state
-        if subfunction & 0x80:
+        tester_service = spec.service(SID_TESTER_PRESENT)
+        if (
+            subfunction & 0x80
+            and tester_service
+            and tester_service.suppress_positive_response_supported
+        ):
             return ExpectedResponse(no_response=True), state
         return ExpectedResponse(positive=bytes((positive_sid(sid), 0))), state
     if sid == SID_ECU_RESET:
@@ -222,6 +272,20 @@ def step(
             state, security_level=0, pending_security_level=None
         )
     return ExpectedResponse(positive=bytes((positive_sid(sid),)) + request[1:]), state
+
+
+def step(
+    spec: EcuSpec, state: State, env: dict[str, object], request: bytes
+) -> tuple[ExpectedResponse, State]:
+    # Separate the suppress bit from the actual subfunction, preserving negative replies.
+    if len(request) > 1 and request[0] in {0x10, 0x11, 0x27, 0x31} and request[1] & 0x80:
+        service = spec.service(request[0])
+        canonical = bytes((request[0], request[1] & 0x7F)) + request[2:]
+        response, following = _step(spec, state, env, canonical)
+        if service and service.suppress_positive_response_supported and response.nrc is None:
+            return ExpectedResponse(no_response=True), following
+        return response, following
+    return _step(spec, state, env, request)
 
 
 def expected_response(

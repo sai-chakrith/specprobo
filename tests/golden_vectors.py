@@ -18,7 +18,12 @@ class GoldenVector:
 # These bytes are hand-written protocol expectations; neither implementation generated them.
 VECTORS = (
     GoldenVector(
-        "session-positive", (), b"\x10\x03", b"\x50\x03", {}, "extended session is accepted"
+        "session-positive",
+        (),
+        b"\x10\x03",
+        b"\x50\x03\x00\x32\x01\xf4",
+        {},
+        "extended session includes P2=50ms and P2-star=5000ms in 10ms units",
     ),
     GoldenVector(
         "session-invalid", (), b"\x10\xff", b"\x7f\x10\x31", {}, "unknown session is out of range"

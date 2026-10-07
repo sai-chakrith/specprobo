@@ -311,7 +311,7 @@ def render_oem_b_xlsx(ground_truth: str | Path, output: str | Path) -> None:
             ],
         ),
         "Timing": (
-            ["P2 milliseconds", "P2-star milliseconds", "S3 seconds"],
+            ["P2 milliseconds", "P2-star milliseconds", "S3 milliseconds"],
             [[spec["timing"]["p2_ms"], spec["timing"]["p2_star_ms"], spec["timing"]["s3_ms"]]],
         ),
         "Priority": (["NRC order"], [[",".join(map(str, spec["nrc_priority"]))]]),

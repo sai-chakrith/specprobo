@@ -23,6 +23,8 @@ class WorkspaceRepository:
         self.api_key = api_key
 
     def _authorize(self) -> None:
+        if self.session.info.get("authorized_workspace") == self.workspace_id:
+            return
         workspace = self.session.get(Workspace, self.workspace_id)
         if workspace is None:
             raise PermissionError("workspace access denied")
@@ -50,7 +52,13 @@ class WorkspaceRepository:
         )
 
     def review_field(
-        self, field_id: str, decision: str, reviewer: str, value: dict[str, Any] | None = None
+        self,
+        field_id: str,
+        decision: str,
+        reviewer: str,
+        value: dict[str, Any] | None = None,
+        *,
+        commit: bool = True,
     ) -> Review:
         self._authorize()
         if decision not in {"approved", "edited", "rejected"}:
@@ -84,7 +92,8 @@ class WorkspaceRepository:
             reviewer,
             {"field_id": field_id, "decision": decision, "value": field.value},
         )
-        self.session.commit()
+        if commit:
+            self.session.commit()
         return review
 
     def list_fields(self) -> list[ExtractedField]:

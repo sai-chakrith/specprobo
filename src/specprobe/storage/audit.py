@@ -36,6 +36,8 @@ class AuditLog:
     def append(
         self, workspace_id: str, action: str, actor: str, payload: dict[str, Any]
     ) -> AuditLogRow:
+        # A database write lock serializes the read/hash/append transaction across processes.
+        self.session.connection().exec_driver_sql("UPDATE audit_mutex SET value=value+1 WHERE id=1")
         previous = self.session.scalar(select(AuditLogRow).order_by(AuditLogRow.id.desc()).limit(1))
         row = AuditLogRow(
             id=(previous.id + 1) if previous else 1,

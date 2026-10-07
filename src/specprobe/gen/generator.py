@@ -1,8 +1,10 @@
 from collections.abc import Iterable
+from dataclasses import replace
 from hashlib import sha256
 
+from ..domain.conditions import environment, targeted_negatives
 from ..domain.provenance import APPROVED_STATUSES
-from ..domain.schema import EcuSpec, Precondition
+from ..domain.schema import DataIdentifier, EcuSpec, Precondition, Routine
 from ..domain.testcase import TestCase, TraceRef
 from ..rules.oracle import State, security_key, step
 
@@ -23,34 +25,7 @@ def _trace(spec: EcuSpec, paths: Iterable[str], statuses: frozenset[str]) -> lis
 
 
 def _environment(conditions: list[Precondition], truth: bool) -> dict[str, object]:
-    values: dict[str, object] = {}
-    for condition in conditions:
-        if condition.signal is None:
-            continue
-        value = condition.value
-        if truth:
-            if condition.op == "<" and isinstance(value, (int, float)):
-                values[condition.signal] = value - 1
-            elif condition.op == ">" and isinstance(value, (int, float)):
-                values[condition.signal] = value + 1
-            elif condition.op == "!=" and isinstance(value, bool):
-                values[condition.signal] = not value
-            elif condition.op == "!=" and isinstance(value, (int, float)):
-                values[condition.signal] = value + 1
-            else:
-                values[condition.signal] = value
-        elif isinstance(value, bool):
-            values[condition.signal] = not value
-        elif isinstance(value, (int, float)):
-            if condition.op in {"<", "<="}:
-                values[condition.signal] = value + 1
-            elif condition.op in {">", ">="}:
-                values[condition.signal] = value - 1
-            else:
-                values[condition.signal] = value + 1
-        else:
-            values[condition.signal] = "__false__"
-    return values
+    return environment(conditions, truth)
 
 
 def _setup(spec: EcuSpec, session: int, security: int) -> list[bytes]:
@@ -58,9 +33,16 @@ def _setup(spec: EcuSpec, session: int, security: int) -> list[bytes]:
     if session != spec.sessions[0].id:
         steps.append(bytes((0x10, session)))
     if security > 0:
-        seed = bytes((0xA5, security))
+        seed = (
+            bytes.fromhex(spec.response_profile.seeds[security])
+            if security in spec.response_profile.seeds
+            else bytes((0xA5, security))
+        )
         steps.extend(
-            (bytes((0x27, security * 2 - 1)), bytes((0x27, security * 2)) + security_key(seed))
+            (
+                bytes((0x27, security * 2 - 1)),
+                bytes((0x27, security * 2)) + security_key(seed, spec),
+            )
         )
     return steps
 
@@ -81,29 +63,64 @@ def _make_case(
     if not setup:
         setup = _setup(spec, spec.sessions[0].id, 0)
     state = State(session=spec.sessions[0].id)
+    setup_expected: list[bytes | None] = []
+    step_expected: list[bytes | None] = []
     for request in setup:
-        _, state = step(spec, state, env, request)
+        response, state = step(spec, state, env, request)
+        if response.bytes is None or not response.bytes or response.bytes[0] == 0x7F:
+            raise ValueError(
+                f"Setup cannot establish requested session/security state for {name}; "
+                "resolve access requirements"
+            )
+        setup_expected.append(response.bytes)
+    idle_before_ms = float(str(env.get("__idle_before_ms", 0)))
+    if idle_before_ms >= spec.timing.s3_ms:
+        state = replace(
+            state, session=spec.sessions[0].id, security_level=0, pending_security_level=None
+        )
+    pre_step_state = state
     expected = None
     for request in steps:
         response, state = step(spec, state, env, request)
         expected = response.bytes
+        step_expected.append(expected)
     digest = sha256((name + repr(setup) + repr(steps) + repr(env)).encode()).hexdigest()[:16]
+    if steps and steps[-1] and expected is not None and expected[:1] != b"\x7f":
+        mask = spec.response_profile.response_masks.get(steps[-1][0])
+        if mask is not None and len(bytes.fromhex(mask)) != len(expected):
+            raise ValueError("Configured response mask length differs from a generated response")
     return TestCase(
         id=digest,
         trace_to=trace_to,
-        preconditions={"session": state.session, "security": state.security_level},
+        preconditions={
+            "session": pre_step_state.session,
+            "security": pre_step_state.security_level,
+        },
         setup_steps=setup,
         steps=steps,
         environment=env,
         expected=expected,
         tags=[name],
+        setup_expected=setup_expected,
+        step_expected=step_expected,
+        idle_before_ms=idle_before_ms,
+        response_mask=bytes.fromhex(spec.response_profile.response_masks[steps[-1][0]])
+        if steps
+        and steps[-1]
+        and steps[-1][0] in spec.response_profile.response_masks
+        and expected is not None
+        and expected[:1] != b"\x7f"
+        else None,
     )
 
 
 def generate_suite(spec: EcuSpec, statuses: frozenset[str] = APPROVED_STATUSES) -> list[TestCase]:
+    from ..workflow import validate_spec
+
+    validate_spec(spec)
     cases: dict[str, TestCase] = {}
     max_security = max((item.level for item in spec.security_levels), default=0)
-    security_states = sorted({0, max_security})
+    security_states = sorted({0, *(level.level for level in spec.security_levels)})
     for index, did in enumerate(spec.dids):
         paths = [f"dids[{index}].did", f"dids[{index}].length_bytes"]
         for session in spec.sessions:
@@ -282,7 +299,12 @@ def generate_suite(spec: EcuSpec, statuses: frozenset[str] = APPROVED_STATUSES) 
     )
     for security_level in sorted(item.level for item in spec.security_levels if item.level > 0):
         seed_request = bytes((0x27, security_level * 2 - 1))
-        key = security_key(bytes((0xA5, security_level)))
+        seed = (
+            bytes.fromhex(spec.response_profile.seeds[security_level])
+            if security_level in spec.response_profile.seeds
+            else bytes((0xA5, security_level))
+        )
+        key = security_key(seed, spec)
         key_request = bytes((0x27, security_level * 2)) + key
         security_cases = [
             (f"security-seed-{security_level}", [], [seed_request]),
@@ -443,4 +465,71 @@ def generate_suite(spec: EcuSpec, statuses: frozenset[str] = APPROVED_STATUSES) 
         case = _make_case(spec, name, setup, [request], {}, traces, statuses)
         if case:
             cases[case.id] = case
+    groups: list[tuple[str, list[DataIdentifier | Routine]]] = [
+        ("dids", list(spec.dids)),
+        ("routines", list(spec.routines)),
+    ]
+    for kind, items in groups:
+        for index, item in enumerate(items):
+            if isinstance(item, DataIdentifier):
+                if not item.write_sessions:
+                    continue
+                session_id, level = item.write_sessions[0], item.write_security or 0
+                request = b"\x2e" + item.did.to_bytes(2, "big") + bytes(item.length_bytes)
+            else:
+                session_id, level = item.sessions[0], item.security or 0
+                control = item.control_types[0]
+                request = (
+                    bytes((0x31, control))
+                    + item.rid.to_bytes(2, "big")
+                    + bytes(item.parameter_lengths[control])
+                )
+            for condition_index, witness in targeted_negatives(item.preconditions):
+                case = _make_case(
+                    spec,
+                    f"{kind}-conjunct-{index}-{condition_index}",
+                    _setup(spec, session_id, level),
+                    [request],
+                    witness,
+                    [f"{kind}[{index}].preconditions"],
+                    statuses,
+                )
+                if case:
+                    cases[case.id] = case
+    for index, item in enumerate(spec.dids):
+        if not item.read_sessions or not item.read_preconditions:
+            continue
+        setup = _setup(spec, item.read_sessions[0], item.read_security or 0)
+        request = b"\x22" + item.did.to_bytes(2, "big")
+        witnesses = [("positive", environment(item.read_preconditions))] + [
+            (str(i), witness) for i, witness in targeted_negatives(item.read_preconditions)
+        ]
+        for label, witness in witnesses:
+            case = _make_case(
+                spec,
+                f"did-read-conjunct-{index}-{label}",
+                setup,
+                [request],
+                witness,
+                [f"dids[{index}].read_preconditions"],
+                statuses,
+            )
+            if case:
+                cases[case.id] = case
+    if len(spec.sessions) > 1 and spec.service(0x3E) is not None:
+        for idle in (spec.timing.s3_ms - 1, spec.timing.s3_ms, spec.timing.s3_ms + 1):
+            timing_case = _make_case(
+                spec,
+                f"timing-s3-{idle}",
+                _setup(spec, spec.sessions[-1].id, 0),
+                [b"\x3e\x00"],
+                {"__idle_before_ms": idle},
+                ["timing.s3_ms"],
+                statuses,
+            )
+            if timing_case is not None:
+                timing_case.preconditions["expected_session_after_idle"] = (
+                    spec.sessions[0].id if idle >= spec.timing.s3_ms else spec.sessions[-1].id
+                )
+                cases[timing_case.id] = timing_case
     return list(cases.values())

@@ -11,7 +11,7 @@
     "id": "extended-session",
     "setup": [],
     "request": "1003",
-    "expected": "5003",
+    "expected": "5003003201f4",
     "environment": {},
     "reason": "The extended diagnostic session is supported."
   },

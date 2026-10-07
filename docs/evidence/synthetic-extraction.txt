@@ -1,0 +1,20 @@
+oem | field type | precision | recall
+OEM-A | did | 100.0% | 100.0%
+OEM-A | length_bytes | 100.0% | 100.0%
+OEM-A | precondition | 100.0% | 100.0%
+OEM-A | session | 100.0% | 100.0%
+OEM-A | security | 100.0% | 100.0%
+OEM-A | service | 100.0% | 100.0%
+OEM-A | routine | 100.0% | 100.0%
+OEM-A | timing | 100.0% | 100.0%
+OEM-A | nrc_priority | 100.0% | 100.0%
+OEM-B | did | 100.0% | 100.0%
+OEM-B | length_bytes | 100.0% | 100.0%
+OEM-B | precondition | 100.0% | 100.0%
+OEM-B | session | 100.0% | 100.0%
+OEM-B | security | 100.0% | 100.0%
+OEM-B | service | 100.0% | 100.0%
+OEM-B | routine | 100.0% | 100.0%
+OEM-B | timing | 100.0% | 100.0%
+OEM-B | nrc_priority | 100.0% | 100.0%
+Ollama run: not executed; offline evaluation uses FakeLLM.

@@ -1,0 +1,222 @@
+excluded mechanical mutation lines: [34, 35, 38, 39, 45, 46, 47, 48, 49, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 82, 83, 108, 109, 352, 353, 354, 355, 356, 357, 358, 359, 360, 361, 362, 363, 364, 365, 366, 367, 368, 369, 370, 371, 372, 373, 374, 375, 376, 377, 378, 379, 380, 381, 382, 383, 384, 385, 386, 387, 388, 389, 390, 391, 392]
+baseline mechanical mutants: total=236, compilable=236, output mismatch=53, crash=4, survived=179, equivalent=76, genuine gap=103, raw score=22.5%, adjusted score=33.1%
+genuine-gap survivor AUTO-0001: operator=replace-nrc, line=8, diff=17 -> 19
+genuine-gap survivor AUTO-0003: operator=replace-nrc, line=12, diff=49 -> 19
+genuine-gap survivor AUTO-0004: operator=replace-nrc, line=15, diff=17 -> 19
+genuine-gap survivor AUTO-0005: operator=replace-nrc, line=16, diff=18 -> 19
+genuine-gap survivor AUTO-0007: operator=replace-nrc, line=18, diff=36 -> 19
+genuine-gap survivor AUTO-0012: operator=replace-nrc, line=23, diff=127 -> 19
+genuine-gap survivor AUTO-0023: operator=if-test-false, line=149, diff=if service.allowed_sessions and self.state.session not in service.allowed_sessions and (not self._session_allowed(service.allowed_sessions)):
+    candidates.append(NRC_SERVICE_NOT_SUPPORTED_IN_SESSION) -> False
+genuine-gap survivor AUTO-0025: operator=if-test-false, line=155, diff=if service.required_security_level is not None and self.state.security_level < service.required_security_level:
+    candidates.append(NRC_SECURITY_ACCESS_DENIED) -> False
+genuine-gap survivor AUTO-0027: operator=if-test-false, line=160, diff=if service.subfunctions and len(request) > 1:
+    subfunction = request[1] & 127
+    entry = next((item for item in service.subfunctions if item.value == subfunction), None)
+    if entry is None:
+        if not self._unsupported_subfunction_allowed():
+            candidates.append(NRC_SUBFUNCTION_NOT_SUPPORTED)
+    elif entry.allowed_sessions and self.state.session not in entry.allowed_sessions and (not self._session_allowed(entry.allowed_sessions)):
+        candidates.append(NRC_SUBFUNCTION_NOT_SUPPORTED_IN_SESSION)
+    elif entry.required_security_level is not None and self.state.security_level < entry.required_security_level:
+        candidates.append(NRC_SECURITY_ACCESS_DENIED) -> False
+genuine-gap survivor AUTO-0028: operator=if-test-true, line=177, diff=if not candidates:
+    return None -> True
+genuine-gap survivor AUTO-0030: operator=delete-nrc-return, line=179, diff=return self._negative(sid, self._choose_nrc(candidates)) -> None
+genuine-gap survivor AUTO-0034: operator=if-test-false, line=185, diff=if len(request) != 2:
+    return self._negative(SID_SESSION_CONTROL, NRC_INCORRECT_LENGTH) -> False
+genuine-gap survivor AUTO-0036: operator=if-test-false, line=188, diff=if not any((item.id == target for item in self.spec.sessions)):
+    return self._negative(SID_SESSION_CONTROL, NRC_REQUEST_OUT_OF_RANGE) -> False
+genuine-gap survivor AUTO-0037: operator=if-test-true, line=208, diff=if blocked:
+    return blocked -> True
+genuine-gap survivor AUTO-0038: operator=if-test-false, line=208, diff=if blocked:
+    return blocked -> False
+genuine-gap survivor AUTO-0039: operator=if-test-true, line=210, diff=if len(request) != 2:
+    return self._negative(SID_ECU_RESET, NRC_INCORRECT_LENGTH) -> True
+genuine-gap survivor AUTO-0040: operator=if-test-false, line=210, diff=if len(request) != 2:
+    return self._negative(SID_ECU_RESET, NRC_INCORRECT_LENGTH) -> False
+genuine-gap survivor AUTO-0041: operator=if-test-true, line=217, diff=if blocked:
+    return blocked -> True
+genuine-gap survivor AUTO-0043: operator=if-test-true, line=219, diff=if len(request) < 2:
+    return self._negative(SID_SECURITY_ACCESS, NRC_INCORRECT_LENGTH) -> True
+genuine-gap survivor AUTO-0044: operator=if-test-false, line=219, diff=if len(request) < 2:
+    return self._negative(SID_SECURITY_ACCESS, NRC_INCORRECT_LENGTH) -> False
+genuine-gap survivor AUTO-0045: operator=if-test-true, line=223, diff=if level <= 0 or level not in {item.level for item in self.spec.security_levels}:
+    return self._negative(SID_SECURITY_ACCESS, NRC_REQUEST_OUT_OF_RANGE) -> True
+genuine-gap survivor AUTO-0046: operator=if-test-false, line=223, diff=if level <= 0 or level not in {item.level for item in self.spec.security_levels}:
+    return self._negative(SID_SECURITY_ACCESS, NRC_REQUEST_OUT_OF_RANGE) -> False
+genuine-gap survivor AUTO-0047: operator=if-test-true, line=225, diff=if subfunction % 2:
+    if len(request) != 2:
+        return self._negative(SID_SECURITY_ACCESS, NRC_INCORRECT_LENGTH)
+    self.state = SimulatorState(self.state.session, self.state.security_level, level)
+    seed = bytes.fromhex(self.spec.response_profile.seeds[level]) if level in self.spec.response_profile.seeds else _seed(level)
+    return bytes((103, subfunction)) + seed -> True
+genuine-gap survivor AUTO-0048: operator=if-test-false, line=225, diff=if subfunction % 2:
+    if len(request) != 2:
+        return self._negative(SID_SECURITY_ACCESS, NRC_INCORRECT_LENGTH)
+    self.state = SimulatorState(self.state.session, self.state.security_level, level)
+    seed = bytes.fromhex(self.spec.response_profile.seeds[level]) if level in self.spec.response_profile.seeds else _seed(level)
+    return bytes((103, subfunction)) + seed -> False
+genuine-gap survivor AUTO-0049: operator=if-test-true, line=235, diff=if len(request) != 4:
+    return self._negative(SID_SECURITY_ACCESS, NRC_INCORRECT_LENGTH) -> True
+genuine-gap survivor AUTO-0051: operator=if-test-true, line=237, diff=if self.state.pending_security_level != level:
+    return self._negative(SID_SECURITY_ACCESS, NRC_REQUEST_SEQUENCE_ERROR) -> True
+genuine-gap survivor AUTO-0052: operator=if-test-false, line=237, diff=if self.state.pending_security_level != level:
+    return self._negative(SID_SECURITY_ACCESS, NRC_REQUEST_SEQUENCE_ERROR) -> False
+genuine-gap survivor AUTO-0053: operator=if-test-true, line=249, diff=if request[2:] != expected_key:
+    return self._negative(SID_SECURITY_ACCESS, NRC_INVALID_KEY) -> True
+genuine-gap survivor AUTO-0058: operator=if-test-false, line=258, diff=if len(request) != 3:
+    return self._negative(SID_READ_DATA, NRC_INCORRECT_LENGTH) -> False
+genuine-gap survivor AUTO-0065: operator=if-test-true, line=279, diff=if blocked:
+    return blocked -> True
+genuine-gap survivor AUTO-0067: operator=if-test-true, line=281, diff=if len(request) < 3:
+    return self._negative(SID_WRITE_DATA, NRC_INCORRECT_LENGTH) -> True
+genuine-gap survivor AUTO-0068: operator=if-test-false, line=281, diff=if len(request) < 3:
+    return self._negative(SID_WRITE_DATA, NRC_INCORRECT_LENGTH) -> False
+genuine-gap survivor AUTO-0069: operator=if-test-true, line=284, diff=if did is None or not did.write_sessions or (did.write_sessions and self.state.session not in did.write_sessions and (not self._session_allowed(did.write_sessions))):
+    return self._negative(SID_WRITE_DATA, NRC_REQUEST_OUT_OF_RANGE) -> True
+genuine-gap survivor AUTO-0070: operator=if-test-false, line=284, diff=if did is None or not did.write_sessions or (did.write_sessions and self.state.session not in did.write_sessions and (not self._session_allowed(did.write_sessions))):
+    return self._negative(SID_WRITE_DATA, NRC_REQUEST_OUT_OF_RANGE) -> False
+genuine-gap survivor AUTO-0072: operator=if-test-false, line=294, diff=if did.write_security is not None and self.state.security_level < did.write_security and self._write_security_denied(did.write_security):
+    return self._negative(SID_WRITE_DATA, NRC_SECURITY_ACCESS_DENIED) -> False
+genuine-gap survivor AUTO-0078: operator=if-test-false, line=311, diff=if blocked:
+    return blocked -> False
+genuine-gap survivor AUTO-0096: operator=if-test-false, line=336, diff=if len(request) not in {1, 2}:
+    return self._negative(SID_TESTER_PRESENT, NRC_INCORRECT_LENGTH) -> False
+genuine-gap survivor AUTO-0098: operator=if-test-false, line=339, diff=if subfunction & 127:
+    if self._unsupported_subfunction_allowed():
+        return bytes((126, subfunction & 127))
+    return self._negative(SID_TESTER_PRESENT, NRC_SUBFUNCTION_NOT_SUPPORTED) -> False
+genuine-gap survivor AUTO-0100: operator=if-test-false, line=344, diff=if subfunction & 128 and tester_service and tester_service.suppress_positive_response_supported:
+    return None -> False
+genuine-gap survivor AUTO-0103: operator=if-test-false, line=92, diff=if sid == SID_ECU_RESET:
+    response = self._reset(request)
+elif sid == SID_SECURITY_ACCESS:
+    response = self._security(request)
+elif sid == SID_READ_DATA:
+    response = self._read(request)
+elif sid == SID_WRITE_DATA:
+    response = self._write(request)
+elif sid == SID_ROUTINE_CONTROL:
+    response = self._routine(request)
+elif sid == SID_TESTER_PRESENT:
+    response = self._tester_present(request)
+else:
+    response = self._negative(sid, NRC_SERVICE_NOT_SUPPORTED) -> False
+genuine-gap survivor AUTO-0106: operator=if-test-true, line=125, diff=if code in candidates:
+    return code -> True
+genuine-gap survivor AUTO-0107: operator=if-test-false, line=125, diff=if code in candidates:
+    return code -> False
+genuine-gap survivor AUTO-0112: operator=if-test-true, line=163, diff=if entry is None:
+    if not self._unsupported_subfunction_allowed():
+        candidates.append(NRC_SUBFUNCTION_NOT_SUPPORTED)
+elif entry.allowed_sessions and self.state.session not in entry.allowed_sessions and (not self._session_allowed(entry.allowed_sessions)):
+    candidates.append(NRC_SUBFUNCTION_NOT_SUPPORTED_IN_SESSION)
+elif entry.required_security_level is not None and self.state.security_level < entry.required_security_level:
+    candidates.append(NRC_SECURITY_ACCESS_DENIED) -> True
+genuine-gap survivor AUTO-0113: operator=if-test-false, line=163, diff=if entry is None:
+    if not self._unsupported_subfunction_allowed():
+        candidates.append(NRC_SUBFUNCTION_NOT_SUPPORTED)
+elif entry.allowed_sessions and self.state.session not in entry.allowed_sessions and (not self._session_allowed(entry.allowed_sessions)):
+    candidates.append(NRC_SUBFUNCTION_NOT_SUPPORTED_IN_SESSION)
+elif entry.required_security_level is not None and self.state.security_level < entry.required_security_level:
+    candidates.append(NRC_SECURITY_ACCESS_DENIED) -> False
+genuine-gap survivor AUTO-0117: operator=delete-nrc-return, line=186, diff=return self._negative(SID_SESSION_CONTROL, NRC_INCORRECT_LENGTH) -> None
+genuine-gap survivor AUTO-0118: operator=delete-nrc-return, line=189, diff=return self._negative(SID_SESSION_CONTROL, NRC_REQUEST_OUT_OF_RANGE) -> None
+genuine-gap survivor AUTO-0119: operator=flip-comparison, line=210, diff=len(request) != 2 -> ==
+genuine-gap survivor AUTO-0120: operator=length-off-by-one, line=210, diff=2 -> 3
+genuine-gap survivor AUTO-0121: operator=length-off-by-one, line=210, diff=2 -> 1
+genuine-gap survivor AUTO-0122: operator=delete-nrc-return, line=211, diff=return self._negative(SID_ECU_RESET, NRC_INCORRECT_LENGTH) -> None
+genuine-gap survivor AUTO-0123: operator=flip-comparison, line=219, diff=len(request) < 2 -> >=
+genuine-gap survivor AUTO-0124: operator=length-off-by-one, line=219, diff=2 -> 3
+genuine-gap survivor AUTO-0125: operator=length-off-by-one, line=219, diff=2 -> 1
+genuine-gap survivor AUTO-0126: operator=delete-nrc-return, line=220, diff=return self._negative(SID_SECURITY_ACCESS, NRC_INCORRECT_LENGTH) -> None
+genuine-gap survivor AUTO-0127: operator=swap-boolean-operator, line=223, diff=level <= 0 or level not in {item.level for item in self.spec.security_levels} -> and
+genuine-gap survivor AUTO-0128: operator=delete-nrc-return, line=224, diff=return self._negative(SID_SECURITY_ACCESS, NRC_REQUEST_OUT_OF_RANGE) -> None
+genuine-gap survivor AUTO-0129: operator=if-test-true, line=226, diff=if len(request) != 2:
+    return self._negative(SID_SECURITY_ACCESS, NRC_INCORRECT_LENGTH) -> True
+genuine-gap survivor AUTO-0131: operator=flip-comparison, line=235, diff=len(request) != 4 -> ==
+genuine-gap survivor AUTO-0132: operator=length-off-by-one, line=235, diff=4 -> 5
+genuine-gap survivor AUTO-0133: operator=length-off-by-one, line=235, diff=4 -> 3
+genuine-gap survivor AUTO-0135: operator=flip-comparison, line=237, diff=self.state.pending_security_level != level -> ==
+genuine-gap survivor AUTO-0136: operator=delete-nrc-return, line=238, diff=return self._negative(SID_SECURITY_ACCESS, NRC_REQUEST_SEQUENCE_ERROR) -> None
+genuine-gap survivor AUTO-0137: operator=flip-comparison, line=249, diff=request[2:] != expected_key -> ==
+genuine-gap survivor AUTO-0142: operator=delete-nrc-return, line=259, diff=return self._negative(SID_READ_DATA, NRC_INCORRECT_LENGTH) -> None
+genuine-gap survivor AUTO-0148: operator=flip-comparison, line=281, diff=len(request) < 3 -> >=
+genuine-gap survivor AUTO-0149: operator=length-off-by-one, line=281, diff=3 -> 4
+genuine-gap survivor AUTO-0150: operator=length-off-by-one, line=281, diff=3 -> 2
+genuine-gap survivor AUTO-0151: operator=delete-nrc-return, line=282, diff=return self._negative(SID_WRITE_DATA, NRC_INCORRECT_LENGTH) -> None
+genuine-gap survivor AUTO-0152: operator=swap-boolean-operator, line=285, diff=did is None or not did.write_sessions or (did.write_sessions and self.state.session not in did.write_sessions and (not self._session_allowed(did.write_sessions))) -> and
+genuine-gap survivor AUTO-0153: operator=delete-nrc-return, line=293, diff=return self._negative(SID_WRITE_DATA, NRC_REQUEST_OUT_OF_RANGE) -> None
+genuine-gap survivor AUTO-0155: operator=delete-nrc-return, line=299, diff=return self._negative(SID_WRITE_DATA, NRC_SECURITY_ACCESS_DENIED) -> None
+genuine-gap survivor AUTO-0175: operator=length-off-by-one, line=336, diff=1 -> 2
+genuine-gap survivor AUTO-0176: operator=length-off-by-one, line=336, diff=1 -> 0
+genuine-gap survivor AUTO-0179: operator=delete-nrc-return, line=337, diff=return self._negative(SID_TESTER_PRESENT, NRC_INCORRECT_LENGTH) -> None
+genuine-gap survivor AUTO-0180: operator=if-test-true, line=340, diff=if self._unsupported_subfunction_allowed():
+    return bytes((126, subfunction & 127)) -> True
+genuine-gap survivor AUTO-0182: operator=delete-nrc-return, line=342, diff=return self._negative(SID_TESTER_PRESENT, NRC_SUBFUNCTION_NOT_SUPPORTED) -> None
+genuine-gap survivor AUTO-0186: operator=if-test-false, line=94, diff=if sid == SID_SECURITY_ACCESS:
+    response = self._security(request)
+elif sid == SID_READ_DATA:
+    response = self._read(request)
+elif sid == SID_WRITE_DATA:
+    response = self._write(request)
+elif sid == SID_ROUTINE_CONTROL:
+    response = self._routine(request)
+elif sid == SID_TESTER_PRESENT:
+    response = self._tester_present(request)
+else:
+    response = self._negative(sid, NRC_SERVICE_NOT_SUPPORTED) -> False
+genuine-gap survivor AUTO-0187: operator=flip-comparison, line=118, diff=self.state.security_level >= required_security -> <
+genuine-gap survivor AUTO-0188: operator=flip-comparison, line=157, diff=self.state.security_level < service.required_security_level -> >=
+genuine-gap survivor AUTO-0189: operator=flip-comparison, line=160, diff=len(request) > 1 -> <=
+genuine-gap survivor AUTO-0190: operator=length-off-by-one, line=160, diff=1 -> 2
+genuine-gap survivor AUTO-0191: operator=length-off-by-one, line=160, diff=1 -> 0
+genuine-gap survivor AUTO-0193: operator=if-test-false, line=164, diff=if not self._unsupported_subfunction_allowed():
+    candidates.append(NRC_SUBFUNCTION_NOT_SUPPORTED) -> False
+genuine-gap survivor AUTO-0194: operator=if-test-true, line=166, diff=if entry.allowed_sessions and self.state.session not in entry.allowed_sessions and (not self._session_allowed(entry.allowed_sessions)):
+    candidates.append(NRC_SUBFUNCTION_NOT_SUPPORTED_IN_SESSION)
+elif entry.required_security_level is not None and self.state.security_level < entry.required_security_level:
+    candidates.append(NRC_SECURITY_ACCESS_DENIED) -> True
+genuine-gap survivor AUTO-0197: operator=flip-comparison, line=223, diff=level <= 0 -> >
+genuine-gap survivor AUTO-0198: operator=flip-comparison, line=226, diff=len(request) != 2 -> ==
+genuine-gap survivor AUTO-0199: operator=length-off-by-one, line=226, diff=2 -> 3
+genuine-gap survivor AUTO-0200: operator=length-off-by-one, line=226, diff=2 -> 1
+genuine-gap survivor AUTO-0202: operator=flip-comparison, line=246, diff=self.spec.response_profile.key_algorithm == 'identity' -> !=
+genuine-gap survivor AUTO-0205: operator=swap-boolean-operator, line=288, diff=did.write_sessions and self.state.session not in did.write_sessions and (not self._session_allowed(did.write_sessions)) -> or
+genuine-gap survivor AUTO-0206: operator=flip-comparison, line=296, diff=self.state.security_level < did.write_security -> >=
+genuine-gap survivor AUTO-0209: operator=flip-comparison, line=338, diff=len(request) == 2 -> !=
+genuine-gap survivor AUTO-0210: operator=length-off-by-one, line=338, diff=2 -> 3
+genuine-gap survivor AUTO-0211: operator=length-off-by-one, line=338, diff=2 -> 1
+genuine-gap survivor AUTO-0216: operator=replace-nrc, line=161, diff=127 -> 19
+genuine-gap survivor AUTO-0217: operator=swap-boolean-operator, line=167, diff=entry.allowed_sessions and self.state.session not in entry.allowed_sessions and (not self._session_allowed(entry.allowed_sessions)) -> or
+genuine-gap survivor AUTO-0218: operator=if-test-true, line=172, diff=if entry.required_security_level is not None and self.state.security_level < entry.required_security_level:
+    candidates.append(NRC_SECURITY_ACCESS_DENIED) -> True
+genuine-gap survivor AUTO-0222: operator=if-test-false, line=98, diff=if sid == SID_WRITE_DATA:
+    response = self._write(request)
+elif sid == SID_ROUTINE_CONTROL:
+    response = self._routine(request)
+elif sid == SID_TESTER_PRESENT:
+    response = self._tester_present(request)
+else:
+    response = self._negative(sid, NRC_SERVICE_NOT_SUPPORTED) -> False
+genuine-gap survivor AUTO-0223: operator=swap-boolean-operator, line=173, diff=entry.required_security_level is not None and self.state.security_level < entry.required_security_level -> or
+genuine-gap survivor AUTO-0224: operator=flip-comparison, line=188, diff=item.id == target -> !=
+genuine-gap survivor AUTO-0228: operator=if-test-false, line=100, diff=if sid == SID_ROUTINE_CONTROL:
+    response = self._routine(request)
+elif sid == SID_TESTER_PRESENT:
+    response = self._tester_present(request)
+else:
+    response = self._negative(sid, NRC_SERVICE_NOT_SUPPORTED) -> False
+genuine-gap survivor AUTO-0229: operator=flip-comparison, line=162, diff=item.value == subfunction -> !=
+genuine-gap survivor AUTO-0233: operator=if-test-true, line=102, diff=if sid == SID_TESTER_PRESENT:
+    response = self._tester_present(request)
+else:
+    response = self._negative(sid, NRC_SERVICE_NOT_SUPPORTED) -> True
+excluded mechanical mutation lines: [34, 35, 38, 39, 45, 46, 47, 48, 49, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 82, 83, 108, 109, 352, 353, 354, 355, 356, 357, 358, 359, 360, 361, 362, 363, 364, 365, 366, 367, 368, 369, 370, 371, 372, 373, 374, 375, 376, 377, 378, 379, 380, 381, 382, 383, 384, 385, 386, 387, 388, 389, 390, 391, 392]
+generated mechanical mutants: total=236, compilable=236, output mismatch=193, crash=22, survived=32, equivalent=32, genuine gap=0, raw score=81.8%, adjusted score=94.6%
+suite | size | total mutants | compilable | output mismatch | crash | survived | equivalent | genuine gap | raw score | adjusted score
+baseline | 5 | 236 | 236 | 53 | 4 | 179 | 76 | 103 | 22.5% | 33.1%
+generated | 2024 | 236 | 236 | 193 | 22 | 32 | 32 | 0 | 81.8% | 94.6%
+generated wall-clock time: 0.621655s
+baseline author time: not provided

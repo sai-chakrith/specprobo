@@ -1,0 +1,8 @@
+{
+  "corpus_sha256": "08041fa727d90ab74bdbb11b5c53c2a2f960f842ecffa5cc9d2641ea71183659",
+  "model": null,
+  "embedding_path": null,
+  "human_semantic_groundedness": null,
+  "status": "NOT_RUN",
+  "dependency": "Set SPECPROBE_OLLAMA_URL, SPECPROBE_OLLAMA_MODEL and SPECPROBE_EMBED_MODEL_PATH to available local infrastructure."
+}

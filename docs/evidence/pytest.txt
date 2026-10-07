@@ -1,0 +1,18 @@
+........................................................................ [ 70%]
+..............................                                           [100%]
+============================== warnings summary ===============================
+.venv\Lib\site-packages\fastapi\testclient.py:1
+  C:\Users\peddi\Downloads\chakrithdump\specprobo\.venv\Lib\site-packages\fastapi\testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+.venv\Lib\site-packages\chromadb\telemetry\opentelemetry\__init__.py:128
+  C:\Users\peddi\Downloads\chakrithdump\specprobo\.venv\Lib\site-packages\chromadb\telemetry\opentelemetry\__init__.py:128: DeprecationWarning: 'asyncio.iscoroutinefunction' is deprecated and slated for removal in Python 3.16; use inspect.iscoroutinefunction() instead
+    if asyncio.iscoroutinefunction(f):
+
+tests/test_api.py: 143 warnings
+tests/test_storage_compliance.py: 5 warnings
+  C:\Users\peddi\Downloads\chakrithdump\specprobo\.venv\Lib\site-packages\chromadb\api\collection_configuration.py:327: DeprecationWarning: legacy embedding function config: 'HashEmbedding' object has no attribute 'get_config'
+    return json.dumps(create_collection_configuration_to_json(config, metadata))
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+102 passed, 150 warnings in 23.83s
