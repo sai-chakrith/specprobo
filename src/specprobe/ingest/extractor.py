@@ -113,6 +113,16 @@ def extract_spec_fields(
         else:
             index = 0
         mappings: dict[str, list[tuple[str, Any]]] = {
+            "Metadata": [(key, row.values.get(key)) for key in ("ecu_name", "oem", "version")],
+            "DIDs": [
+                (f"dids[{index}].name", row.values.get("Signal name")),
+                (f"dids[{index}].encoding", row.values.get("Encoding")),
+                (f"dids[{index}].read_sessions", _csv_ints(row.values.get("Read modes"))),
+                (f"dids[{index}].write_sessions", _csv_ints(row.values.get("Write modes"))),
+                (f"dids[{index}].read_security", _literal(row.values.get("Read security"))),
+                (f"dids[{index}].write_security", _literal(row.values.get("Write security"))),
+                (f"dids[{index}].preconditions", _literal(row.values.get("Preconditions"))),
+            ],
             "Sessions": [
                 (f"sessions[{index}].id", row.values.get("Mode code")),
                 (f"sessions[{index}].name", row.values.get("Label")),
@@ -160,6 +170,12 @@ def extract_spec_fields(
                 and path.endswith("required_security_level")
                 and "Security gate" in row.values
             )
+            keep_explicit_null = keep_explicit_null or (
+                sheet == "DIDs"
+                and path.endswith(("read_security", "write_security"))
+                and ("Read security" if path.endswith("read_security") else "Write security")
+                in row.values
+            )
             if (value is not None and value != "") or keep_explicit_null:
                 fields.append(ProposedField(path, value, _provenance(row, str(row.values))))
     for block in blocks:
@@ -173,9 +189,7 @@ def extract_spec_fields(
                         ProposedField(f"timing.{key}", item_value, _block_provenance(block, value))
                     )
             elif section == "nrc_priority":
-                fields.append(
-                    ProposedField(section, parsed, _block_provenance(block, value))
-                )
+                fields.append(ProposedField(section, parsed, _block_provenance(block, value)))
             elif isinstance(parsed, list):
                 for index, item in enumerate(parsed):
                     if isinstance(item, dict):
@@ -185,7 +199,7 @@ def extract_spec_fields(
                                 ProposedField(path, item_value, _block_provenance(block, value))
                             )
         for path, value in _path_values(block.text):
-            parsed = _literal(value)
+            parsed = value if path in {"ecu_name", "oem", "version"} else _literal(value)
             fields.append(ProposedField(path, parsed, _block_provenance(block, value)))
     return fields
 
@@ -240,12 +254,21 @@ def _section_values(text: str) -> list[tuple[str, str]]:
 
 def _path_values(text: str) -> list[tuple[str, str]]:
     pattern = re.compile(
-        r"(?m)^(sessions|security_levels|services|routines)\[(\d+)\]\.([\w]+):\s*(.+)$"
+        r"(?m)^(sessions|security_levels|services|routines|dids)\[(\d+)\]\.([\w]+):[ \t]*"
     )
-    return [
-        (f"{match.group(1)}[{match.group(2)}].{match.group(3)}", match.group(4).strip())
-        for match in pattern.finditer(text)
-    ]
+    values: list[tuple[str, str]] = []
+    for match in pattern.finditer(text):
+        remaining = text[match.end() :].strip()
+        # Decode a complete JSON value, including wrapped PDF lines, without consuming headings.
+        try:
+            parsed, _ = json.JSONDecoder().raw_decode(remaining.replace("\n", " "))
+            value = json.dumps(parsed)
+        except json.JSONDecodeError:
+            value = remaining.split("\n", 1)[0]
+        values.append((f"{match.group(1)}[{match.group(2)}].{match.group(3)}", value))
+    scalar = re.compile(r"(?m)^(ecu_name|oem|version):\s*(.+)$")
+    values.extend((m.group(1), _literal(m.group(2))) for m in scalar.finditer(text))
+    return values
 
 
 def _assign_path(data: dict[str, Any], path: str, value: Any) -> None:

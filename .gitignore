@@ -6,3 +6,5 @@ __pycache__/
 .hypothesis/
 *.db
 .venv/
+.specprobe/
+tmp/

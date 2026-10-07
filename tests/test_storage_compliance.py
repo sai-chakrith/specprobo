@@ -100,11 +100,16 @@ def test_audit_hash_chain_detects_in_memory_tampering() -> None:
 
 def test_review_generation_and_run_are_audited() -> None:
     repository_a, _, _ = _repositories()
-    repository_a.review_field("field-1", "approved", "engineer")
+    document = repository_a.add_document("spec.json", "{}")
+    field = repository_a.propose_fields(
+        [{"document_id": document.id, "json_path": "ecu_name", "value": {"value": "ECU"}}],
+        "engineer",
+    )[0]
+    repository_a.review_field(field.id, "approved", "engineer")
     repository_a.generate_suite("suite-1", {"count": 1}, "engineer")
     repository_a.record_run("run-1", "suite-1", {"passed": 1}, "engineer")
     actions = [entry.action for entry in repository_a.audit_entries()]
-    assert actions == ["review_decision", "suite_generation", "suite_run"]
+    assert actions == ["proposed_fields", "review_decision", "suite_generation", "suite_run"]
 
 
 def test_persistent_chroma_backend_uses_workspace_collections(tmp_path: Path) -> None:

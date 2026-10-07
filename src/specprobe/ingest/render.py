@@ -17,6 +17,8 @@ from reportlab.platypus import (  # type: ignore[import-untyped]
     TableStyle,
 )
 
+from ..domain.schema import EcuSpec
+
 
 def _load(path: str | Path) -> dict[str, Any]:
     return cast(dict[str, Any], json.loads(Path(path).read_text(encoding="utf-8")))
@@ -38,6 +40,7 @@ def generate_precondition_statements(
 
     # Conjunction of two conditions ("when X and Y")
     if len(preconditions) >= 2:
+
         def _phrase(c: dict[str, Any]) -> str:
             sig = c.get("signal", "")
             if c.get("unit"):
@@ -64,16 +67,16 @@ def generate_precondition_statements(
             )
             # 2. Alternative comparison with units
             statements.append(
-                f"{action_gerund} {target_type} {target_hex} requires {sig} to be under {val} {unit}."
+                f"{action_gerund} {target_type} {target_hex} requires "
+                f"{sig} to be under {val} {unit}."
             )
             # 3. Negation with units
             statements.append(
-                f"{target_type} {target_hex} must not be {action} while {sig} is not below {val} {unit}."
+                f"{target_type} {target_hex} must not be {action} "
+                f"while {sig} is not below {val} {unit}."
             )
             # 4. Reference by name instead of hex
-            statements.append(
-                f"The {target_name} {noun} requires {sig} below {val} {unit}."
-            )
+            statements.append(f"The {target_name} {noun} requires {sig} below {val} {unit}.")
         elif cond.get("op") == "<":
             statements.append(
                 f"{target_type} {target_hex} may be {action} only when {sig} is below {val}."
@@ -84,9 +87,7 @@ def generate_precondition_statements(
             statements.append(
                 f"{target_type} {target_hex} must not be {action} while {sig} is not below {val}."
             )
-            statements.append(
-                f"The {target_name} {noun} requires {sig} below {val}."
-            )
+            statements.append(f"The {target_name} {noun} requires {sig} below {val}.")
         else:
             # Boolean condition
             # 1. Affirmative wording
@@ -102,19 +103,19 @@ def generate_precondition_statements(
                 f"{target_type} {target_hex} must not be {action} while {sig} is false."
             )
             # 4. Reference by name instead of hex ("the VIN data identifier")
-            statements.append(
-                f"The {target_name} {noun} may be {action} only when {sig} is true."
-            )
+            statements.append(f"The {target_name} {noun} may be {action} only when {sig} is true.")
 
     return statements
 
 
 def render_oem_a_pdf(ground_truth: str | Path, output: str | Path) -> None:
-    spec = _load(ground_truth)
+    spec = EcuSpec.model_validate(_load(ground_truth)).model_dump(mode="json")
     styles = getSampleStyleSheet()
     story: list[Any] = [Paragraph(f"{spec['ecu_name']} diagnostic specification", styles["Title"])]
     story.append(Paragraph(f"OEM {spec['oem']} | version {spec['version']}", styles["Normal"]))
     story.append(Spacer(1, 0.2 * inch))
+    for key in ("ecu_name", "oem", "version"):
+        story.append(Paragraph(f"{key}: {json.dumps(spec[key])}", styles["BodyText"]))
     header = [
         ["Data identifiers", "", "", "", ""],
         ["DID", "Name", "Bytes", "Read sessions", "Write sessions"],
@@ -177,6 +178,7 @@ def render_oem_a_pdf(ground_truth: str | Path, output: str | Path) -> None:
         "sessions",
         "security_levels",
         "services",
+        "dids",
         "routines",
         "timing",
         "nrc_priority",
@@ -206,7 +208,7 @@ def render_oem_a_pdf(ground_truth: str | Path, output: str | Path) -> None:
                 for item in section_value
             ]
         story.append(Paragraph(f"{section}: {section_value}", styles["BodyText"]))
-        if section in {"sessions", "security_levels", "services", "routines"}:
+        if section in {"sessions", "security_levels", "services", "routines", "dids"}:
             for index, item in enumerate(section_value):
                 for key, value in item.items():
                     story.append(
@@ -219,12 +221,16 @@ def render_oem_a_pdf(ground_truth: str | Path, output: str | Path) -> None:
 
 
 def render_oem_b_xlsx(ground_truth: str | Path, output: str | Path) -> None:
-    spec = _load(ground_truth)
+    spec = EcuSpec.model_validate(_load(ground_truth)).model_dump(mode="json")
     workbook = Workbook()
     active = workbook.active
     assert active is not None
     workbook.remove(active)
     sections = {
+        "Metadata": (
+            ["ecu_name", "oem", "version"],
+            [[spec["ecu_name"], spec["oem"], spec["version"]]],
+        ),
         "Sessions": (
             ["Mode code", "Label"],
             [[item["id"], item["name"]] for item in spec["sessions"]],
@@ -234,7 +240,17 @@ def render_oem_b_xlsx(ground_truth: str | Path, output: str | Path) -> None:
             [[item["level"], item["name"]] for item in spec["security_levels"]],
         ),
         "DIDs": (
-            ["Identifier", "Signal name", "Payload octets", "Read modes", "Write modes"],
+            [
+                "Identifier",
+                "Signal name",
+                "Payload octets",
+                "Read modes",
+                "Write modes",
+                "Encoding",
+                "Read security",
+                "Write security",
+                "Preconditions",
+            ],
             [
                 [
                     f"0x{item['did']:04X}",
@@ -242,6 +258,10 @@ def render_oem_b_xlsx(ground_truth: str | Path, output: str | Path) -> None:
                     item["length_bytes"],
                     ",".join(map(str, item["read_sessions"])),
                     ",".join(map(str, item["write_sessions"])),
+                    item["encoding"],
+                    json.dumps(item.get("read_security")),
+                    json.dumps(item.get("write_security")),
+                    json.dumps(item.get("preconditions", [])),
                 ]
                 for item in spec["dids"]
             ],

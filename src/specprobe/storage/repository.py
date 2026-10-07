@@ -56,10 +56,19 @@ class WorkspaceRepository:
         if decision not in {"approved", "edited", "rejected"}:
             raise ValueError("invalid review decision")
         field = self.session.get(ExtractedField, field_id)
+        if field is None:
+            raise ValueError("field not found")
+        if decision == "edited" and value is None:
+            raise ValueError("edited decisions require a replacement value")
+        if value is not None and decision != "edited":
+            raise ValueError("replacement values require an edited decision")
+        if value is not None and set(value) != {"value"}:
+            raise ValueError("replacement must contain only the value key; provenance is immutable")
         if field is not None and field.workspace_id != self.workspace_id:
             raise PermissionError("field access denied")
         if field is not None and value is not None:
-            field.value = dict(value)
+            field.value = {**field.value, **value}
+        field.value = {**field.value, "review_status": decision, "reviewer": reviewer}
         review = Review(
             id=str(uuid4()),
             workspace_id=self.workspace_id,
@@ -73,7 +82,7 @@ class WorkspaceRepository:
             self.workspace_id,
             "review_decision",
             reviewer,
-            {"field_id": field_id, "decision": decision},
+            {"field_id": field_id, "decision": decision, "value": field.value},
         )
         self.session.commit()
         return review
@@ -89,7 +98,9 @@ class WorkspaceRepository:
     def list_approved_fields(self) -> list[ExtractedField]:
         fields = {field.id: field for field in self.list_fields()}
         reviews = self.session.scalars(
-            select(Review).where(Review.workspace_id == self.workspace_id)
+            select(Review)
+            .where(Review.workspace_id == self.workspace_id)
+            .order_by(Review.created_at, Review.id)
         )
         decisions: dict[str, str] = {}
         for review in reviews:
@@ -155,7 +166,9 @@ class WorkspaceRepository:
         self._authorize()
         return list(
             self.session.scalars(
-                select(AuditLogRow).where(AuditLogRow.workspace_id == self.workspace_id)
+                select(AuditLogRow)
+                .where(AuditLogRow.workspace_id == self.workspace_id)
+                .order_by(AuditLogRow.id)
             )
         )
 

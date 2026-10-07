@@ -1,8 +1,22 @@
 services:
-  specprobe:
+  api:
     build: .
-    command: python -m specprobe.demo
+    command: uvicorn specprobe.api.app:app --host 0.0.0.0 --port 8000
+    ports:
+      - "127.0.0.1:8000:8000"
     environment:
-      SPECPROBE_DATABASE_URL: sqlite:///specprobe.db
+      SPECPROBE_DATABASE_URL: sqlite:////data/specprobe.db
+      SPECPROBE_VECTOR_PATH: /data/chroma
     volumes:
-      - .:/app
+      - specprobe-data:/data
+  ui:
+    build: .
+    command: streamlit run src/specprobe/ui/app.py --server.address 0.0.0.0
+    ports:
+      - "127.0.0.1:8501:8501"
+    environment:
+      SPECPROBE_API_URL: http://api:8000
+    depends_on:
+      - api
+volumes:
+  specprobe-data:

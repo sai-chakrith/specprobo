@@ -33,6 +33,10 @@ def _environment(conditions: list[Precondition], truth: bool) -> dict[str, objec
                 values[condition.signal] = value - 1
             elif condition.op == ">" and isinstance(value, (int, float)):
                 values[condition.signal] = value + 1
+            elif condition.op == "!=" and isinstance(value, bool):
+                values[condition.signal] = not value
+            elif condition.op == "!=" and isinstance(value, (int, float)):
+                values[condition.signal] = value + 1
             else:
                 values[condition.signal] = value
         elif isinstance(value, bool):
@@ -73,6 +77,9 @@ def _make_case(
     trace_to = _trace(spec, traces, statuses)
     if not trace_to:
         return None
+    # Generic NRC cases also need a reset: previous cases may leave another session active.
+    if not setup:
+        setup = _setup(spec, spec.sessions[0].id, 0)
     state = State(session=spec.sessions[0].id)
     for request in setup:
         _, state = step(spec, state, env, request)

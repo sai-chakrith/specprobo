@@ -1,8 +1,20 @@
+from __future__ import annotations
+
+import builtins
 import hashlib
 import math
 import os
+import re
 from pathlib import Path
 from typing import Protocol, cast
+
+
+def _tokens(text: str) -> set[str]:
+    values = set(re.findall(r"[\w]+", text.lower()))
+    return {
+        str(int(token, 16)) if re.fullmatch(r"0x[0-9a-f]+", token) else token for token in values
+    }
+
 
 KINDS = frozenset({"standard", "oem", "ecu", "project"})
 
@@ -57,8 +69,10 @@ class HashEmbedding:
     def __call__(self, input: list[str]) -> list[list[float]]:
         vectors: list[list[float]] = []
         for text in input:
-            digest = hashlib.sha256(text.encode("utf-8")).digest()
-            values = [digest[index % len(digest)] / 255.0 for index in range(self.dimension)]
+            values = [0.0] * self.dimension
+            for token in sorted(_tokens(text)):
+                digest = hashlib.sha256(token.encode("utf-8")).digest()
+                values[int.from_bytes(digest[:4], "big") % self.dimension] += 1.0
             norm = math.sqrt(sum(value * value for value in values)) or 1.0
             vectors.append([value / norm for value in values])
         return vectors
@@ -96,7 +110,10 @@ class LocalEmbedding:
         self._model = SentenceTransformer(str(path), local_files_only=True)
 
     def __call__(self, input: list[str]) -> list[list[float]]:
-        return cast(list[list[float]], self._model.encode(input, convert_to_numpy=False).tolist())
+        return cast(
+            list[list[float]],
+            self._model.encode(input, convert_to_numpy=True, normalize_embeddings=True).tolist(),
+        )
 
     def embed_query(self, input: str) -> list[float]:
         return self([input])[0]
@@ -157,6 +174,28 @@ class ScopedVectorStore:
 
     def list(self, kind: str) -> list[dict[str, object]]:
         return self._backend.list(collection_name(self.workspace_id, kind))
+
+    def search(
+        self, kind: str, query: str, limit: int = 5, allowed_document_ids: set[str] | None = None
+    ) -> builtins.list[dict[str, object]]:
+        rows = self.list(kind)
+        if allowed_document_ids is not None:
+            rows = [
+                row
+                for row in rows
+                if cast(dict[str, str], row["metadata"]).get("document_id") in allowed_document_ids
+            ]
+        # Reuse configured local embeddings; the offline fallback is a token hash embedding.
+        embed = getattr(self._backend, "_embedding_function", HashEmbedding(dimension=256))
+        if isinstance(embed, HashEmbedding):
+            rows = [row for row in rows if _tokens(query) & _tokens(str(row["text"]))]
+        vectors = embed([query, *[str(row["text"]) for row in rows]])
+        ranked = []
+        for row, vector in zip(rows, vectors[1:], strict=True):
+            score = sum(a * b for a, b in zip(vectors[0], vector, strict=True))
+            if score > 0:
+                ranked.append({**row, "score": score})
+        return sorted(ranked, key=lambda row: float(str(row["score"])), reverse=True)[:limit]
 
 
 def scoped_store(backend: VectorBackend, workspace_id: str) -> ScopedVectorStore:
